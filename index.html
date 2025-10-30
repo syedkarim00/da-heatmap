@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Life of Discipline Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="top-bar">
+        <div class="brand-block">
+          <div class="brand-mark">LD</div>
+          <div class="brand-copy">
+            <h1>Life of Discipline</h1>
+            <p>Calendar heatmaps and habit journals for disciplined days.</p>
+          </div>
+        </div>
+        <div class="month-switcher" aria-live="polite">
+          <button id="prevMonth" type="button" aria-label="Previous month">&#8592;</button>
+          <div id="monthLabel" class="month-label"></div>
+          <button id="nextMonth" type="button" aria-label="Next month">&#8594;</button>
+        </div>
+        <div class="top-actions">
+          <button id="resetData" type="button" class="ghost">Reset data</button>
+        </div>
+      </header>
+
+      <main class="app-layout">
+        <aside class="sidebar">
+          <section class="card today-card" aria-labelledby="todayHeading">
+            <header class="section-header">
+              <div>
+                <h2 id="todayHeading">Selected day</h2>
+                <p id="selectedDayLabel" class="muted"></p>
+              </div>
+              <div class="date-controls">
+                <input type="date" id="dateSelector" />
+                <button id="jumpToday" type="button" class="ghost">Today</button>
+              </div>
+            </header>
+            <div class="today-metrics">
+              <div class="metric">
+                <span class="label">Habits done</span>
+                <span id="metricDone" class="value">0</span>
+              </div>
+              <div class="metric">
+                <span class="label">Completion rate</span>
+                <span id="metricRate" class="value">0%</span>
+              </div>
+              <div class="metric">
+                <span class="label">Focus streak</span>
+                <span id="metricStreak" class="value">0 days</span>
+              </div>
+            </div>
+            <div class="today-list" aria-live="polite">
+              <h3>Log habits</h3>
+              <ul id="todayHabitList" class="habit-checklist"></ul>
+            </div>
+            <div class="quick-log">
+              <div class="quick-log-header">
+                <h3>Quick log</h3>
+                <p class="muted">Search a habit, hit enter to toggle.</p>
+              </div>
+              <input
+                id="habitSearch"
+                type="search"
+                placeholder="Search habits..."
+                aria-label="Search habits"
+                autocomplete="off"
+              />
+              <ul id="searchResults" class="search-results"></ul>
+            </div>
+          </section>
+
+          <section class="card library-card" aria-labelledby="habitLibraryHeading">
+            <div class="section-header">
+              <h2 id="habitLibraryHeading">Habit library</h2>
+              <button id="openHabitDialog" type="button" class="primary">New habit</button>
+            </div>
+            <ul id="habitLibrary" class="habit-library"></ul>
+          </section>
+        </aside>
+
+        <section class="calendar-column">
+          <div class="card calendar-card" aria-labelledby="calendarHeading">
+            <div class="section-header">
+              <h2 id="calendarHeading">Habit heatmap</h2>
+              <div class="legend" aria-hidden="true">
+                <span>Less</span>
+                <span class="legend-swatch level-1"></span>
+                <span class="legend-swatch level-2"></span>
+                <span class="legend-swatch level-3"></span>
+                <span class="legend-swatch level-4"></span>
+                <span>More</span>
+              </div>
+            </div>
+            <div class="calendar-grid" role="table">
+              <div class="calendar-weekdays" role="row">
+                <span role="columnheader">Mon</span>
+                <span role="columnheader">Tue</span>
+                <span role="columnheader">Wed</span>
+                <span role="columnheader">Thu</span>
+                <span role="columnheader">Fri</span>
+                <span role="columnheader">Sat</span>
+                <span role="columnheader">Sun</span>
+              </div>
+              <div id="calendarRows" class="calendar-rows"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="journal-column">
+          <div class="card journal-card" aria-labelledby="journalHeading">
+            <header class="section-header">
+              <h2 id="journalHeading">Habit journals</h2>
+              <p class="muted">Capture context alongside your streaks.</p>
+            </header>
+            <div class="journal-editor">
+              <label for="dayJournal">Journal for <span id="journalDateLabel"></span></label>
+              <textarea id="dayJournal" rows="6" placeholder="What stood out today?"></textarea>
+              <div class="journal-actions">
+                <button id="saveJournal" type="button" class="primary">Save journal</button>
+                <span id="journalStatus" class="muted" role="status"></span>
+              </div>
+            </div>
+            <div class="journal-history">
+              <h3>Recent entries</h3>
+              <ul id="journalHistory" class="journal-list"></ul>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="habitDialog" class="modal">
+      <form id="habitForm" method="dialog" class="modal-content">
+        <header>
+          <h2 id="habitFormTitle">New habit</h2>
+        </header>
+        <label>
+          Name
+          <input type="text" id="habitName" required />
+        </label>
+        <label>
+          Color
+          <input type="color" id="habitColor" value="#2563eb" />
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="habitArchived" /> Archive habit
+        </label>
+        <footer class="modal-actions">
+          <button type="button" id="habitCancel" class="ghost">Cancel</button>
+          <button type="submit" class="primary">Save</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="noteDialog" class="modal">
+      <form id="noteForm" method="dialog" class="modal-content">
+        <header>
+          <h2>Habit journal</h2>
+          <p id="noteContext" class="muted"></p>
+        </header>
+        <textarea id="noteText" rows="6" placeholder="Add context for this habit on this day"></textarea>
+        <footer class="modal-actions">
+          <button type="button" id="noteCancel" class="ghost">Cancel</button>
+          <button type="submit" class="primary">Save note</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
