@@ -17,9 +17,9 @@ const state = {
   selectedDate: formatISO(new Date()),
   selectedHabitId: null,
   searchTerm: "",
-  noteContext: null,
   habitEditing: null,
   lastToggledTodo: null,
+  lastLoggedHabit: null,
 };
 
 const elements = {
@@ -29,9 +29,6 @@ const elements = {
   dateSelector: document.getElementById("dateSelector"),
   jumpToday: document.getElementById("jumpToday"),
   selectedDayLabel: document.getElementById("selectedDayLabel"),
-  metricDone: document.getElementById("metricDone"),
-  metricRate: document.getElementById("metricRate"),
-  metricStreak: document.getElementById("metricStreak"),
   todayHabitList: document.getElementById("todayHabitList"),
   habitSearch: document.getElementById("habitSearch"),
   searchResults: document.getElementById("searchResults"),
@@ -44,16 +41,13 @@ const elements = {
   habitColor: document.getElementById("habitColor"),
   habitArchived: document.getElementById("habitArchived"),
   habitCancel: document.getElementById("habitCancel"),
+  addSubHabit: document.getElementById("addSubHabit"),
+  subHabitList: document.getElementById("subHabitList"),
   calendarRows: document.getElementById("calendarRows"),
   todoForm: document.getElementById("todoForm"),
   todoInput: document.getElementById("todoInput"),
   todoList: document.getElementById("todoList"),
   clearCompletedTodos: document.getElementById("clearCompletedTodos"),
-  noteDialog: document.getElementById("noteDialog"),
-  noteForm: document.getElementById("noteForm"),
-  noteText: document.getElementById("noteText"),
-  noteCancel: document.getElementById("noteCancel"),
-  noteContext: document.getElementById("noteContext"),
   resetData: document.getElementById("resetData"),
 };
 
@@ -66,13 +60,9 @@ function loadData() {
       return seed;
     }
     const parsed = JSON.parse(stored);
-    if (!parsed.habits || !Array.isArray(parsed.habits)) {
-      throw new Error("Invalid data");
-    }
-    if (!parsed.todos || !Array.isArray(parsed.todos)) {
-      parsed.todos = [];
-    }
-    return parsed;
+    const normalized = migrateData(parsed);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    return normalized;
   } catch (error) {
     console.warn("Failed to parse stored data, resetting", error);
     const seed = createSeedData();
@@ -96,6 +86,14 @@ function formatISO(date) {
   return `${year}-${month}-${day}`;
 }
 
+function createUniqueId(prefix) {
+  const unique =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return `${prefix}-${unique}`;
+}
+
 function parseISO(iso) {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(y, m - 1, d);
@@ -105,11 +103,18 @@ function createSeedData() {
   const today = new Date();
   const habits = [
     {
-      id: "habit-morning",
-      name: "Morning prayer",
+      id: "habit-prayer",
+      name: "Daily prayers",
       color: "#38bdf8",
       archived: false,
       createdAt: new Date(today.getFullYear(), today.getMonth() - 2, 1).toISOString(),
+      subHabits: [
+        { id: "habit-prayer-fajr", name: "Fajr" },
+        { id: "habit-prayer-dhuhr", name: "Dhuhr" },
+        { id: "habit-prayer-asr", name: "Asr" },
+        { id: "habit-prayer-maghrib", name: "Maghrib" },
+        { id: "habit-prayer-isha", name: "Isha" },
+      ],
     },
     {
       id: "habit-reading",
@@ -117,6 +122,19 @@ function createSeedData() {
       color: "#f97316",
       archived: false,
       createdAt: new Date(today.getFullYear(), today.getMonth() - 2, 5).toISOString(),
+      subHabits: [{ id: "habit-reading-session", name: "Reading session" }],
+    },
+    {
+      id: "habit-meals",
+      name: "Nutritious meals",
+      color: "#22d3ee",
+      archived: false,
+      createdAt: new Date(today.getFullYear(), today.getMonth() - 1, 8).toISOString(),
+      subHabits: [
+        { id: "habit-meals-breakfast", name: "Breakfast" },
+        { id: "habit-meals-lunch", name: "Lunch" },
+        { id: "habit-meals-dinner", name: "Dinner" },
+      ],
     },
     {
       id: "habit-steps",
@@ -124,11 +142,11 @@ function createSeedData() {
       color: "#a855f7",
       archived: false,
       createdAt: new Date(today.getFullYear(), today.getMonth() - 1, 12).toISOString(),
+      subHabits: [{ id: "habit-steps-route", name: "Walk complete" }],
     },
   ];
 
   const entries = {};
-  const journals = {};
   const todos = [
     {
       id: "todo-focus",
@@ -153,25 +171,51 @@ function createSeedData() {
     const dayEntries = {};
 
     if (i % 2 === 0) {
-      dayEntries["habit-morning"] = {
-        done: true,
-        note: i % 7 === 0 ? "Up before sunrise today." : "",
+      const subHabits = {
+        "habit-prayer-fajr": true,
+        "habit-prayer-dhuhr": true,
+        "habit-prayer-maghrib": true,
+      };
+      if (i % 4 !== 0) {
+        subHabits["habit-prayer-asr"] = true;
+      }
+      if (i % 6 !== 0) {
+        subHabits["habit-prayer-isha"] = true;
+      }
+      dayEntries["habit-prayer"] = {
+        subHabits,
         updatedAt: new Date().toISOString(),
       };
     }
 
     if (i % 3 !== 0) {
       dayEntries["habit-reading"] = {
-        done: true,
-        note: i % 5 === 0 ? "Finished a chapter." : "",
+        subHabits: {
+          "habit-reading-session": true,
+        },
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    if (i % 5 !== 0) {
+      const mealSubs = {
+        "habit-meals-breakfast": true,
+        "habit-meals-dinner": true,
+      };
+      if (i % 7 !== 0) {
+        mealSubs["habit-meals-lunch"] = true;
+      }
+      dayEntries["habit-meals"] = {
+        subHabits: mealSubs,
         updatedAt: new Date().toISOString(),
       };
     }
 
     if (i % 4 !== 0) {
       dayEntries["habit-steps"] = {
-        done: true,
-        note: "Evening walk with a podcast.",
+        subHabits: {
+          "habit-steps-route": true,
+        },
         updatedAt: new Date().toISOString(),
       };
     }
@@ -179,18 +223,82 @@ function createSeedData() {
     if (Object.keys(dayEntries).length > 0) {
       entries[iso] = dayEntries;
     }
-
-    if (i % 6 === 0) {
-      journals[iso] = "Reflected on progress and stayed consistent despite a busy schedule.";
-    }
   }
 
   return {
     habits,
     entries,
-    journals,
     todos,
   };
+}
+
+function migrateData(data) {
+  const next = { ...data };
+  if (!Array.isArray(next.habits)) {
+    throw new Error("Invalid data");
+  }
+  if (!Array.isArray(next.todos)) {
+    next.todos = [];
+  }
+
+  next.habits = next.habits.map((habit) => {
+    const cloned = { ...habit };
+    const baseId = cloned.id || createUniqueId("habit");
+    cloned.id = baseId;
+    const subHabits = Array.isArray(cloned.subHabits) ? cloned.subHabits : [];
+    const normalizedSubs = subHabits
+      .map((sub, index) => {
+        const subId = sub && sub.id ? sub.id : `${baseId}-sub-${index + 1}`;
+        const name = sub && sub.name ? sub.name : `Checkpoint ${index + 1}`;
+        return { id: subId, name };
+      })
+      .filter(Boolean);
+    if (normalizedSubs.length === 0) {
+      normalizedSubs.push({ id: `${baseId}-sub-1`, name: cloned.name || "Habit" });
+    }
+    cloned.subHabits = normalizedSubs;
+    return cloned;
+  });
+
+  if (!next.entries || typeof next.entries !== "object") {
+    next.entries = {};
+  }
+
+  Object.entries(next.entries).forEach(([dateIso, habitEntries]) => {
+    Object.entries(habitEntries).forEach(([habitId, entry]) => {
+      const habit = next.habits.find((item) => item.id === habitId);
+      if (!habit) {
+        delete habitEntries[habitId];
+        return;
+      }
+      const normalized = { subHabits: {}, updatedAt: entry && entry.updatedAt ? entry.updatedAt : new Date().toISOString() };
+      if (entry && entry.subHabits && typeof entry.subHabits === "object") {
+        habit.subHabits.forEach((sub) => {
+          if (entry.subHabits[sub.id]) {
+            normalized.subHabits[sub.id] = true;
+          }
+        });
+      } else if (entry && entry.done) {
+        habit.subHabits.forEach((sub) => {
+          normalized.subHabits[sub.id] = true;
+        });
+      }
+
+      if (Object.keys(normalized.subHabits).length === 0) {
+        delete habitEntries[habitId];
+      } else {
+        habitEntries[habitId] = normalized;
+      }
+    });
+
+    if (Object.keys(habitEntries).length === 0) {
+      delete next.entries[dateIso];
+    }
+  });
+
+  delete next.journals;
+
+  return next;
 }
 
 function getActiveHabits() {
@@ -217,19 +325,47 @@ function getEntry(dateIso, habitId) {
   return entries[habitId] || null;
 }
 
-function toggleEntry(dateIso, habitId) {
-  const entries = state.data.entries[dateIso] ? { ...state.data.entries[dateIso] } : {};
-  const current = entries[habitId] || { done: false, note: "" };
-  const updated = {
-    ...current,
-    done: !current.done,
-    updatedAt: new Date().toISOString(),
-  };
+function getHabitById(habitId) {
+  return state.data.habits.find((habit) => habit.id === habitId) || null;
+}
 
-  if (!updated.done && !updated.note) {
-    delete entries[habitId];
+function getHabitProgress(dateIso, habit) {
+  const entry = getEntry(dateIso, habit.id);
+  const total = Math.max(habit.subHabits ? habit.subHabits.length : 0, 1);
+  if (!entry || !entry.subHabits) {
+    return { done: 0, total };
+  }
+  const done = habit.subHabits.reduce((count, sub) => {
+    return entry.subHabits[sub.id] ? count + 1 : count;
+  }, 0);
+  return { done, total };
+}
+
+function isHabitComplete(dateIso, habit) {
+  const progress = getHabitProgress(dateIso, habit);
+  if (progress.total === 0) {
+    return false;
+  }
+  return progress.done >= progress.total;
+}
+
+function toggleSubHabit(dateIso, habit, subHabitId) {
+  const entries = state.data.entries[dateIso] ? { ...state.data.entries[dateIso] } : {};
+  const current = entries[habit.id] ? { ...entries[habit.id] } : { subHabits: {}, updatedAt: new Date().toISOString() };
+  const subHabits = { ...(current.subHabits || {}) };
+
+  if (subHabits[subHabitId]) {
+    delete subHabits[subHabitId];
   } else {
-    entries[habitId] = updated;
+    subHabits[subHabitId] = true;
+  }
+
+  if (Object.keys(subHabits).length === 0) {
+    delete entries[habit.id];
+  } else {
+    current.subHabits = subHabits;
+    current.updatedAt = new Date().toISOString();
+    entries[habit.id] = current;
   }
 
   if (Object.keys(entries).length === 0) {
@@ -241,20 +377,19 @@ function toggleEntry(dateIso, habitId) {
   saveData();
 }
 
-function setEntryNote(dateIso, habitId, note) {
+function toggleHabitCompletion(dateIso, habit, complete) {
   const entries = state.data.entries[dateIso] ? { ...state.data.entries[dateIso] } : {};
-  const current = entries[habitId] || { done: false, note: "" };
-  const trimmed = note.trim();
-  const updated = {
-    ...current,
-    note: trimmed,
-    updatedAt: new Date().toISOString(),
-  };
-
-  if (!updated.done && !updated.note) {
-    delete entries[habitId];
+  if (complete) {
+    const subHabits = {};
+    habit.subHabits.forEach((sub) => {
+      subHabits[sub.id] = true;
+    });
+    entries[habit.id] = {
+      subHabits,
+      updatedAt: new Date().toISOString(),
+    };
   } else {
-    entries[habitId] = updated;
+    delete entries[habit.id];
   }
 
   if (Object.keys(entries).length === 0) {
@@ -270,11 +405,7 @@ function addTodo(text) {
   const trimmed = text.trim();
   if (!trimmed) return null;
 
-  const unique =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const id = `todo-${unique}`;
+  const id = createUniqueId("todo");
 
   state.data.todos.push({
     id,
@@ -309,20 +440,11 @@ function clearCompletedTodos() {
   saveData();
 }
 
-function calculateCompletion(dateIso) {
-  const active = getActiveHabits();
-  if (active.length === 0) {
-    return { done: 0, total: 0 };
-  }
-  const entries = getDayEntries(dateIso);
-  const done = active.reduce((count, habit) => {
-    const entry = entries[habit.id];
-    return entry && entry.done ? count + 1 : count;
-  }, 0);
-  return { done, total: active.length };
-}
-
 function calculateStreak(habitId, uptoIso = state.selectedDate) {
+  const habit = getHabitById(habitId);
+  if (!habit) {
+    return 0;
+  }
   let streak = 0;
   const uptoDate = parseISO(uptoIso);
   const todayIso = formatISO(new Date());
@@ -334,8 +456,7 @@ function calculateStreak(habitId, uptoIso = state.selectedDate) {
     if (iso > todayIso) {
       continue;
     }
-    const entry = getEntry(iso, habitId);
-    if (entry && entry.done) {
+    if (isHabitComplete(iso, habit)) {
       streak += 1;
     } else {
       break;
@@ -346,9 +467,16 @@ function calculateStreak(habitId, uptoIso = state.selectedDate) {
 }
 
 function calculateTotalCompletions(habitId) {
-  return Object.values(state.data.entries).reduce((count, dayEntries) => {
+  const habit = getHabitById(habitId);
+  if (!habit) {
+    return 0;
+  }
+  return Object.entries(state.data.entries).reduce((count, [dateIso, dayEntries]) => {
     const entry = dayEntries[habitId];
-    return entry && entry.done ? count + 1 : count;
+    if (!entry) {
+      return count;
+    }
+    return isHabitComplete(dateIso, habit) ? count + 1 : count;
   }, 0);
 }
 
@@ -372,15 +500,15 @@ function getCalendarMatrix(viewMonth) {
   return weeks;
 }
 
-function intensityForHabit(dateIso, habitId) {
-  const entry = getEntry(dateIso, habitId);
-  if (!entry || !entry.done) {
+function intensityForHabit(dateIso, habit) {
+  const progress = getHabitProgress(dateIso, habit);
+  if (progress.total === 0 || progress.done === 0) {
     return 0;
   }
-  const streak = calculateStreak(habitId, dateIso);
-  if (streak >= 21) return 4;
-  if (streak >= 14) return 3;
-  if (streak >= 7) return 2;
+  const ratio = progress.done / progress.total;
+  if (ratio >= 1) return 4;
+  if (ratio >= 0.75) return 3;
+  if (ratio >= 0.5) return 2;
   return 1;
 }
 
@@ -426,6 +554,102 @@ function borderForIntensity(color, intensity) {
   return `rgba(${r}, ${g}, ${b}, ${alphaMap[intensity] || 0.35})`;
 }
 
+function createSubHabitRow(subHabit) {
+  const row = document.createElement("li");
+  row.className = "subhabit-row";
+  const id = subHabit && subHabit.id ? subHabit.id : createUniqueId("sub");
+  row.dataset.subhabitId = id;
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "e.g. Fajr";
+  input.value = subHabit && subHabit.name ? subHabit.name : "";
+  input.required = true;
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "ghost";
+  remove.textContent = "Remove";
+  remove.addEventListener("click", () => {
+    row.remove();
+    ensureSubHabitRow();
+  });
+
+  row.append(input, remove);
+  return row;
+}
+
+function ensureSubHabitRow() {
+  const rows = elements.subHabitList.querySelectorAll(".subhabit-row");
+  if (rows.length === 0) {
+    elements.subHabitList.appendChild(createSubHabitRow({ name: "" }));
+  }
+  updateSubHabitRemoveState();
+}
+
+function updateSubHabitRemoveState() {
+  const rows = elements.subHabitList.querySelectorAll(".subhabit-row");
+  rows.forEach((row) => {
+    const button = row.querySelector("button");
+    if (!button) return;
+    button.disabled = rows.length === 1;
+  });
+}
+
+function populateSubHabitForm(habit) {
+  elements.subHabitList.innerHTML = "";
+  const subs = habit && Array.isArray(habit.subHabits) ? habit.subHabits : [];
+  if (subs.length === 0) {
+    elements.subHabitList.appendChild(createSubHabitRow({ name: "" }));
+  } else {
+    subs.forEach((sub) => {
+      elements.subHabitList.appendChild(createSubHabitRow(sub));
+    });
+  }
+  updateSubHabitRemoveState();
+}
+
+function collectSubHabitsFromForm() {
+  const rows = Array.from(elements.subHabitList.querySelectorAll(".subhabit-row"));
+  const subs = rows
+    .map((row, index) => {
+      const input = row.querySelector("input[type=\"text\"]");
+      if (!input) return null;
+      const name = input.value.trim();
+      if (!name) return null;
+      const id = row.dataset.subhabitId || createUniqueId("sub");
+      return { id, name, order: index };
+    })
+    .filter(Boolean)
+    .map(({ id, name }) => ({ id, name }));
+
+  if (subs.length === 0) {
+    subs.push({ id: createUniqueId("sub"), name: "Checkpoint" });
+  }
+  return subs;
+}
+
+function pruneHabitEntries(habit) {
+  const valid = new Set(habit.subHabits.map((sub) => sub.id));
+  Object.entries(state.data.entries).forEach(([dateIso, dayEntries]) => {
+    const entry = dayEntries[habit.id];
+    if (!entry || !entry.subHabits) {
+      return;
+    }
+    Object.keys(entry.subHabits).forEach((subId) => {
+      if (!valid.has(subId)) {
+        delete entry.subHabits[subId];
+      }
+    });
+    if (Object.keys(entry.subHabits).length === 0) {
+      delete dayEntries[habit.id];
+    }
+    if (Object.keys(dayEntries).length === 0) {
+      delete state.data.entries[dateIso];
+    }
+  });
+}
+
 function openHabitForm(habit) {
   if (habit) {
     elements.habitFormTitle.textContent = "Edit habit";
@@ -434,31 +658,20 @@ function openHabitForm(habit) {
     elements.habitArchived.checked = habit.archived;
     state.selectedHabitId = habit.id;
     state.habitEditing = habit.id;
+    populateSubHabitForm(habit);
   } else {
     elements.habitFormTitle.textContent = "New habit";
     elements.habitName.value = "";
     elements.habitColor.value = "#2563eb";
     elements.habitArchived.checked = false;
     state.habitEditing = null;
+    populateSubHabitForm(null);
   }
   elements.habitDialog.showModal();
 }
 
 function closeHabitForm() {
   elements.habitDialog.close();
-}
-
-function openNoteDialog(dateIso, habit) {
-  state.noteContext = { dateIso, habitId: habit.id };
-  const entry = getEntry(dateIso, habit.id);
-  elements.noteContext.textContent = `${habit.name} • ${dayFormatter.format(parseISO(dateIso))}`;
-  elements.noteText.value = entry && entry.note ? entry.note : "";
-  elements.noteDialog.showModal();
-}
-
-function closeNoteDialog() {
-  state.noteContext = null;
-  elements.noteDialog.close();
 }
 
 function renderMonthControls() {
@@ -469,60 +682,106 @@ function renderSelectedDate() {
   const date = parseISO(state.selectedDate);
   elements.selectedDayLabel.textContent = dayFormatter.format(date);
   elements.dateSelector.value = state.selectedDate;
-
-  const completion = calculateCompletion(state.selectedDate);
-  elements.metricDone.textContent = `${completion.done}/${completion.total}`;
-  const rate = completion.total === 0 ? 0 : Math.round((completion.done / completion.total) * 100);
-  elements.metricRate.textContent = `${rate}%`;
-
   ensureSelectedHabit();
-  if (state.selectedHabitId) {
-    const streak = calculateStreak(state.selectedHabitId, state.selectedDate);
-    elements.metricStreak.textContent = `${streak} day${streak === 1 ? "" : "s"}`;
-  } else {
-    elements.metricStreak.textContent = "0 days";
-  }
 }
 
 function renderTodayList() {
   const list = elements.todayHabitList;
   list.innerHTML = "";
   const active = getActiveHabits();
-  const completion = getDayEntries(state.selectedDate);
+  const entryMap = getDayEntries(state.selectedDate);
+  const lastLogged = state.lastLoggedHabit;
   if (active.length === 0) {
     const empty = document.createElement("li");
     empty.className = "muted";
     empty.textContent = "Add your first habit to begin tracking.";
     list.appendChild(empty);
+    state.lastLoggedHabit = null;
     return;
   }
   active.forEach((habit) => {
     const item = document.createElement("li");
-    const label = document.createElement("label");
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = Boolean(completion[habit.id] && completion[habit.id].done);
-    checkbox.addEventListener("change", () => {
-      state.selectedHabitId = habit.id;
-      toggleEntry(state.selectedDate, habit.id);
-      render();
-    });
+    item.className = "habit-log-item";
+
+    const header = document.createElement("div");
+    header.className = "habit-log-header";
+
+    const title = document.createElement("div");
+    title.className = "habit-log-title";
 
     const name = document.createElement("span");
     name.className = "habit-name";
     name.textContent = habit.name;
-    name.style.color = habit.color;
+    name.style.color = habit.color || varFallbackColor();
 
-    label.append(checkbox, name);
-    const noteButton = document.createElement("button");
-    noteButton.type = "button";
-    noteButton.className = "ghost";
-    noteButton.textContent = completion[habit.id] && completion[habit.id].note ? "Edit note" : "Add note";
-    noteButton.addEventListener("click", () => openNoteDialog(state.selectedDate, habit));
+    const progress = getHabitProgress(state.selectedDate, habit);
+    const progressLabel = document.createElement("span");
+    progressLabel.className = "habit-progress";
+    const noun = progress.total === 1 ? "checkpoint" : "checkpoints";
+    progressLabel.textContent = `${progress.done}/${progress.total} ${noun}`;
 
-    item.append(label, noteButton);
+    title.append(name, progressLabel);
+
+    const logButton = document.createElement("button");
+    logButton.type = "button";
+    logButton.className = "log-habit-button";
+    logButton.style.setProperty("--habit-color", habit.color || varFallbackColor());
+    const isComplete = progress.total > 0 && progress.done === progress.total;
+    if (isComplete) {
+      logButton.classList.add("is-complete");
+      logButton.textContent = "Reset day";
+    } else {
+      logButton.textContent = "Log habit";
+    }
+
+    logButton.addEventListener("click", () => {
+      const nextComplete = !isComplete;
+      toggleHabitCompletion(state.selectedDate, habit, nextComplete);
+      state.selectedHabitId = habit.id;
+      state.lastLoggedHabit = { id: habit.id, type: "habit", complete: nextComplete };
+      render();
+    });
+
+    header.append(title, logButton);
+    item.appendChild(header);
+
+    const entry = entryMap[habit.id];
+    if (habit.subHabits && habit.subHabits.length > 0) {
+      const subList = document.createElement("ul");
+      subList.className = "subhabit-list";
+      habit.subHabits.forEach((sub) => {
+        const subItem = document.createElement("li");
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "subhabit-toggle";
+        toggle.textContent = sub.name;
+        const done = Boolean(entry && entry.subHabits && entry.subHabits[sub.id]);
+        toggle.setAttribute("aria-pressed", done ? "true" : "false");
+        toggle.addEventListener("click", () => {
+          state.selectedHabitId = habit.id;
+          toggleSubHabit(state.selectedDate, habit, sub.id);
+          state.lastLoggedHabit = { id: habit.id, type: "sub", subId: sub.id, complete: !done };
+          render();
+        });
+        subItem.appendChild(toggle);
+        subList.appendChild(subItem);
+      });
+      item.appendChild(subList);
+    }
+
     list.appendChild(item);
+
+    if (lastLogged && lastLogged.id === habit.id && lastLogged.type === "habit" && lastLogged.complete) {
+      requestAnimationFrame(() => {
+        logButton.classList.add("is-burst");
+        setTimeout(() => {
+          logButton.classList.remove("is-burst");
+        }, 600);
+      });
+    }
   });
+
+  state.lastLoggedHabit = null;
 }
 
 function renderQuickSearch() {
@@ -545,16 +804,19 @@ function renderQuickSearch() {
     const stats = document.createElement("span");
     stats.className = "habit-stats";
     const streak = calculateStreak(habit.id);
-    stats.textContent = `${calculateTotalCompletions(habit.id)} logs • ${streak} day streak`;
+    const progress = getHabitProgress(state.selectedDate, habit);
+    const noun = progress.total === 1 ? "checkpoint" : "checkpoints";
+    stats.textContent = `${progress.done}/${progress.total} ${noun} today • ${calculateTotalCompletions(habit.id)} perfect days • ${streak} day streak`;
     meta.append(title, stats);
 
     const action = document.createElement("button");
     action.type = "button";
-    const entry = getEntry(state.selectedDate, habit.id);
-    action.textContent = entry && entry.done ? "Undo" : "Log";
+    const isComplete = progress.total > 0 && progress.done === progress.total;
+    action.textContent = isComplete ? "Reset" : "Log all";
     action.addEventListener("click", () => {
       state.selectedHabitId = habit.id;
-      toggleEntry(state.selectedDate, habit.id);
+      toggleHabitCompletion(state.selectedDate, habit, !isComplete);
+      state.lastLoggedHabit = { id: habit.id, type: "habit", complete: !isComplete };
       render();
     });
 
@@ -595,7 +857,7 @@ function renderHabitLibrary() {
       const stats = document.createElement("div");
       stats.className = "habit-stats";
       const status = habit.archived ? "Archived" : "Active";
-      stats.textContent = `${status} • ${calculateTotalCompletions(habit.id)} logs total`;
+      stats.textContent = `${status} • ${habit.subHabits.length} checkpoints • ${calculateTotalCompletions(habit.id)} perfect days`;
 
       meta.append(title, stats);
 
@@ -765,9 +1027,9 @@ function renderCalendar() {
           cell.classList.add("is-future");
           cell.disabled = true;
         }
-        const entry = getEntry(iso, habit.id);
-        if (entry && entry.done) {
-          const intensity = intensityForHabit(iso, habit.id);
+        const progress = getHabitProgress(iso, habit);
+        const intensity = intensityForHabit(iso, habit);
+        if (intensity > 0) {
           const shade = shadeForIntensity(habit.color, intensity);
           cell.classList.add("is-done");
           cell.classList.add(`level-${intensity}`);
@@ -777,32 +1039,22 @@ function renderCalendar() {
           cell.style.removeProperty("--cell-color");
           cell.style.removeProperty("--cell-border-color");
         }
-        if (entry && entry.note) {
-          cell.classList.add("has-note");
-        }
         if (iso === selectedIso && habit.id === state.selectedHabitId) {
           cell.classList.add("is-selected");
         }
 
-        const labelText = `${habit.name} on ${dayFormatter.format(date)}: ${entry && entry.done ? "done" : "not done"}${
-          entry && entry.note ? ". Note: " + entry.note : ""
-        }`;
+        const labelText = `${habit.name} on ${dayFormatter.format(date)}: ${progress.done}/${progress.total} checkpoints`; 
         cell.setAttribute("aria-label", labelText);
 
         cell.addEventListener("click", () => {
           state.selectedDate = iso;
           state.selectedHabitId = habit.id;
           if (!cell.classList.contains("is-future")) {
-            toggleEntry(iso, habit.id);
+            const complete = progress.total > 0 && progress.done === progress.total;
+            toggleHabitCompletion(iso, habit, !complete);
+            state.lastLoggedHabit = { id: habit.id, type: "habit", complete: !complete };
           }
           render();
-        });
-
-        cell.addEventListener("contextmenu", (event) => {
-          event.preventDefault();
-          state.selectedDate = iso;
-          state.selectedHabitId = habit.id;
-          openNoteDialog(iso, habit);
         });
 
         cellsWrapper.appendChild(cell);
@@ -874,8 +1126,12 @@ elements.habitSearch.addEventListener("keydown", (event) => {
     if (!term) return;
     const matches = state.data.habits.filter((habit) => habit.name.toLowerCase().includes(term));
     if (matches.length > 0) {
-      state.selectedHabitId = matches[0].id;
-      toggleEntry(state.selectedDate, matches[0].id);
+      const habit = matches[0];
+      state.selectedHabitId = habit.id;
+      const progress = getHabitProgress(state.selectedDate, habit);
+      const isComplete = progress.total > 0 && progress.done === progress.total;
+      toggleHabitCompletion(state.selectedDate, habit, !isComplete);
+      state.lastLoggedHabit = { id: habit.id, type: "habit", complete: !isComplete };
       render();
     }
   }
@@ -884,6 +1140,16 @@ elements.habitSearch.addEventListener("keydown", (event) => {
 elements.openHabitDialog.addEventListener("click", () => openHabitForm());
 
 elements.habitCancel.addEventListener("click", () => closeHabitForm());
+
+elements.addSubHabit.addEventListener("click", () => {
+  const row = createSubHabitRow({ name: "" });
+  elements.subHabitList.appendChild(row);
+  updateSubHabitRemoveState();
+  const input = row.querySelector("input[type=\"text\"]");
+  if (input) {
+    input.focus();
+  }
+});
 
 elements.habitDialog.addEventListener("close", () => {
   state.habitEditing = null;
@@ -915,6 +1181,7 @@ elements.habitForm.addEventListener("submit", (event) => {
   }
   const color = elements.habitColor.value || varFallbackColor();
   const archived = elements.habitArchived.checked;
+  const subHabits = collectSubHabitsFromForm();
 
   if (state.habitEditing) {
     const habit = state.data.habits.find((item) => item.id === state.habitEditing);
@@ -922,44 +1189,24 @@ elements.habitForm.addEventListener("submit", (event) => {
       habit.name = name;
       habit.color = color;
       habit.archived = archived;
+      habit.subHabits = subHabits;
+      pruneHabitEntries(habit);
     }
   } else {
-    const unique =
-      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const id = `habit-${unique}`;
+    const id = createUniqueId("habit");
     state.data.habits.push({
       id,
       name,
       color,
       archived,
       createdAt: new Date().toISOString(),
+      subHabits,
     });
     state.selectedHabitId = id;
   }
 
   saveData();
   closeHabitForm();
-  render();
-});
-
-elements.noteCancel.addEventListener("click", () => {
-  closeNoteDialog();
-});
-
-elements.noteDialog.addEventListener("close", () => {
-  state.noteContext = null;
-});
-
-elements.noteForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  if (!state.noteContext) {
-    closeNoteDialog();
-    return;
-  }
-  setEntryNote(state.noteContext.dateIso, state.noteContext.habitId, elements.noteText.value);
-  closeNoteDialog();
   render();
 });
 
