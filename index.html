@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Daily Alignment Heatmap</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>Daily Alignment</h1>
+      <p class="tagline">Fill the grid, protect the streak, win the day.</p>
+    </header>
+
+    <main class="app">
+      <section class="today-panel">
+        <div class="today-header">
+          <h2>Today</h2>
+          <input type="date" id="datePicker" />
+        </div>
+        <div id="streakInfo" class="streak-info" aria-live="polite"></div>
+        <button id="graceDayButton" class="grace-button" type="button">Use grace day</button>
+        <ul id="habitList" class="habit-list"></ul>
+      </section>
+
+      <section class="heatmap-panel">
+        <div class="heatmap-header">
+          <h2>Heatmap</h2>
+          <label class="mode-label" for="heatmapMode">Mode</label>
+          <select id="heatmapMode">
+            <option value="combined">Combined day score</option>
+            <option value="per-habit">Per habit</option>
+            <option value="streak">Streak focus</option>
+            <option value="weekly">Weekly success</option>
+          </select>
+        </div>
+        <div id="heatmapContainer" class="heatmap"></div>
+      </section>
+
+      <section class="summary-panel">
+        <h2>This Week</h2>
+        <div id="weeklySummary" class="weekly-summary"></div>
+      </section>
+
+      <section class="habit-form-panel">
+        <h2>Add habit</h2>
+        <form id="habitForm" class="habit-form">
+          <label>
+            Name
+            <input type="text" id="habitName" required />
+          </label>
+          <label>
+            Target frequency
+            <select id="habitFrequency">
+              <option value="daily">Daily</option>
+              <option value="3_per_week">3 times per week</option>
+              <option value="weekdays">Weekdays</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <label>
+            Category
+            <input type="text" id="habitCategory" placeholder="health, faith, learning…" />
+          </label>
+          <label>
+            Color
+            <input type="color" id="habitColor" value="#2663eb" />
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="habitActive" checked /> Show in today’s list
+          </label>
+          <button type="submit">Save habit</button>
+        </form>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <p>Make it easy to win today. Protect the streak. Celebrate progress.</p>
+    </footer>
+
+    <template id="habitItemTemplate">
+      <li class="habit-item">
+        <label>
+          <input type="checkbox" class="habit-checkbox" />
+          <span class="habit-name"></span>
+        </label>
+        <div class="habit-meta"></div>
+      </li>
+    </template>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
