@@ -1,4 +1,5 @@
-const STORAGE_KEY = "lod-tracker-data-v2";
+const STORAGE_KEY = "habit-tracker-data-v2";
+const LEGACY_STORAGE_KEYS = ["lod-tracker-data-v2"];
 
 const monthFormatter = new Intl.DateTimeFormat("en", {
   month: "long",
@@ -20,6 +21,7 @@ const state = {
   habitEditing: null,
   lastToggledTodo: null,
   lastLoggedHabit: null,
+  libraryFilter: "active",
 };
 
 const elements = {
@@ -34,6 +36,8 @@ const elements = {
   searchResults: document.getElementById("searchResults"),
   habitLibrary: document.getElementById("habitLibrary"),
   openHabitDialog: document.getElementById("openHabitDialog"),
+  habitTabActive: document.getElementById("habitTabActive"),
+  habitTabArchived: document.getElementById("habitTabArchived"),
   habitDialog: document.getElementById("habitDialog"),
   habitForm: document.getElementById("habitForm"),
   habitFormTitle: document.getElementById("habitFormTitle"),
@@ -53,15 +57,31 @@ const elements = {
 
 function loadData() {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    let sourceKey = STORAGE_KEY;
+    let stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) {
+      for (const legacyKey of LEGACY_STORAGE_KEYS) {
+        const legacyValue = localStorage.getItem(legacyKey);
+        if (legacyValue) {
+          stored = legacyValue;
+          sourceKey = legacyKey;
+          break;
+        }
+      }
+    }
+
     if (!stored) {
       const seed = createSeedData();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
       return seed;
     }
+
     const parsed = JSON.parse(stored);
     const normalized = migrateData(parsed);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    if (sourceKey !== STORAGE_KEY) {
+      localStorage.removeItem(sourceKey);
+    }
     return normalized;
   } catch (error) {
     console.warn("Failed to parse stored data, resetting", error);
@@ -73,6 +93,11 @@ function loadData() {
 
 function saveData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+  LEGACY_STORAGE_KEYS.forEach((legacyKey) => {
+    if (legacyKey !== STORAGE_KEY) {
+      localStorage.removeItem(legacyKey);
+    }
+  });
 }
 
 function startOfMonth(date) {
@@ -650,6 +675,27 @@ function pruneHabitEntries(habit) {
   });
 }
 
+function deleteHabit(habitId) {
+  const index = state.data.habits.findIndex((habit) => habit.id === habitId);
+  if (index === -1) {
+    return;
+  }
+  state.data.habits.splice(index, 1);
+  Object.entries(state.data.entries).forEach(([dateIso, dayEntries]) => {
+    if (dayEntries[habitId]) {
+      delete dayEntries[habitId];
+    }
+    if (Object.keys(dayEntries).length === 0) {
+      delete state.data.entries[dateIso];
+    }
+  });
+  if (state.selectedHabitId === habitId) {
+    state.selectedHabitId = null;
+  }
+  saveData();
+  render();
+}
+
 function openHabitForm(habit) {
   if (habit) {
     elements.habitFormTitle.textContent = "Edit habit";
@@ -793,7 +839,7 @@ function renderQuickSearch() {
   if (!term) {
     return;
   }
-  const matches = state.data.habits.filter((habit) => habit.name.toLowerCase().includes(term));
+  const matches = getActiveHabits().filter((habit) => habit.name.toLowerCase().includes(term));
   matches.slice(0, 5).forEach((habit) => {
     const item = document.createElement("li");
     const meta = document.createElement("div");
@@ -828,58 +874,83 @@ function renderQuickSearch() {
 function renderHabitLibrary() {
   const list = elements.habitLibrary;
   list.innerHTML = "";
-  if (state.data.habits.length === 0) {
+
+  const isActiveFilter = state.libraryFilter === "active";
+  const activeButton = elements.habitTabActive;
+  const archivedButton = elements.habitTabArchived;
+
+  if (activeButton && archivedButton) {
+    activeButton.classList.toggle("is-active", isActiveFilter);
+    archivedButton.classList.toggle("is-active", !isActiveFilter);
+    activeButton.setAttribute("aria-selected", isActiveFilter ? "true" : "false");
+    archivedButton.setAttribute("aria-selected", !isActiveFilter ? "true" : "false");
+  }
+
+  const habits = state.data.habits
+    .filter((habit) => (isActiveFilter ? !habit.archived : habit.archived))
+    .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+
+  if (habits.length === 0) {
     const empty = document.createElement("li");
     empty.className = "muted";
-    empty.textContent = "No habits yet. Create one to get started.";
+    empty.textContent = isActiveFilter
+      ? "No active habits yet. Create one to get started."
+      : "No archived habits. Archive habits you want to hide.";
     list.appendChild(empty);
     return;
   }
 
-  state.data.habits
-    .slice()
-    .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
-    .forEach((habit) => {
-      const item = document.createElement("li");
-      const meta = document.createElement("div");
-      meta.className = "habit-meta";
+  habits.forEach((habit) => {
+    const item = document.createElement("li");
+    const meta = document.createElement("div");
+    meta.className = "habit-meta";
 
-      const title = document.createElement("div");
-      title.className = "habit-name-tag";
-      const dot = document.createElement("span");
-      dot.className = "habit-dot";
-      dot.style.color = habit.color || varFallbackColor();
-      dot.style.background = habit.color || varFallbackColor();
-      const name = document.createElement("span");
-      name.textContent = habit.name;
-      title.append(dot, name);
+    const title = document.createElement("div");
+    title.className = "habit-name-tag";
+    const dot = document.createElement("span");
+    dot.className = "habit-dot";
+    dot.style.color = habit.color || varFallbackColor();
+    dot.style.background = habit.color || varFallbackColor();
+    const name = document.createElement("span");
+    name.textContent = habit.name;
+    title.append(dot, name);
 
-      const stats = document.createElement("div");
-      stats.className = "habit-stats";
-      const status = habit.archived ? "Archived" : "Active";
-      stats.textContent = `${status} • ${habit.subHabits.length} checkpoints • ${calculateTotalCompletions(habit.id)} perfect days`;
+    const stats = document.createElement("div");
+    stats.className = "habit-stats";
+    const status = habit.archived ? "Archived" : "Active";
+    stats.textContent = `${status} • ${habit.subHabits.length} checkpoints • ${calculateTotalCompletions(habit.id)} perfect days`;
 
-      meta.append(title, stats);
+    meta.append(title, stats);
 
-      const actions = document.createElement("div");
-      actions.className = "habit-actions";
-      const edit = document.createElement("button");
-      edit.type = "button";
-      edit.textContent = "Edit";
-      edit.addEventListener("click", () => openHabitForm(habit));
-      const archive = document.createElement("button");
-      archive.type = "button";
-      archive.textContent = habit.archived ? "Unarchive" : "Archive";
-      archive.addEventListener("click", () => {
-        habit.archived = !habit.archived;
-        saveData();
-        render();
-      });
-      actions.append(edit, archive);
-
-      item.append(meta, actions);
-      list.appendChild(item);
+    const actions = document.createElement("div");
+    actions.className = "habit-actions";
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.textContent = "Edit";
+    edit.addEventListener("click", () => openHabitForm(habit));
+    const archive = document.createElement("button");
+    archive.type = "button";
+    archive.textContent = habit.archived ? "Unarchive" : "Archive";
+    archive.addEventListener("click", () => {
+      habit.archived = !habit.archived;
+      saveData();
+      render();
     });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "danger";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", () => {
+      const message = `Delete "${habit.name}" and remove its history? This can’t be undone.`;
+      if (window.confirm(message)) {
+        deleteHabit(habit.id);
+      }
+    });
+    actions.append(edit, archive, remove);
+
+    item.append(meta, actions);
+    list.appendChild(item);
+  });
 }
 
 function renderTodos() {
@@ -1124,7 +1195,7 @@ elements.habitSearch.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     const term = state.searchTerm.trim().toLowerCase();
     if (!term) return;
-    const matches = state.data.habits.filter((habit) => habit.name.toLowerCase().includes(term));
+    const matches = getActiveHabits().filter((habit) => habit.name.toLowerCase().includes(term));
     if (matches.length > 0) {
       const habit = matches[0];
       state.selectedHabitId = habit.id;
@@ -1138,6 +1209,24 @@ elements.habitSearch.addEventListener("keydown", (event) => {
 });
 
 elements.openHabitDialog.addEventListener("click", () => openHabitForm());
+
+if (elements.habitTabActive) {
+  elements.habitTabActive.addEventListener("click", () => {
+    if (state.libraryFilter !== "active") {
+      state.libraryFilter = "active";
+      renderHabitLibrary();
+    }
+  });
+}
+
+if (elements.habitTabArchived) {
+  elements.habitTabArchived.addEventListener("click", () => {
+    if (state.libraryFilter !== "archived") {
+      state.libraryFilter = "archived";
+      renderHabitLibrary();
+    }
+  });
+}
 
 elements.habitCancel.addEventListener("click", () => closeHabitForm());
 
@@ -1216,6 +1305,7 @@ elements.resetData.addEventListener("click", () => {
     state.viewMonth = startOfMonth(new Date());
     state.selectedDate = formatISO(new Date());
     state.searchTerm = "";
+    state.libraryFilter = "active";
     saveData();
     render();
   }

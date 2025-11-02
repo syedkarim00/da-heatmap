@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Life of Discipline Tracker</title>
+    <title>Habit tracker</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -16,10 +16,10 @@
     <div class="app-shell">
       <header class="top-bar">
         <div class="brand-block">
-          <div class="brand-mark">LD</div>
+          <div class="brand-mark">HT</div>
           <div class="brand-copy">
-            <h1>Life of Discipline</h1>
-            <p>Calendar heatmaps and habit journals for disciplined days.</p>
+            <h1>Habit tracker</h1>
+            <p>Calendar heatmaps and focus to-dos for consistent progress.</p>
           </div>
         </div>
         <div class="month-switcher" aria-live="polite">
@@ -69,6 +69,28 @@
             <div class="section-header">
               <h2 id="habitLibraryHeading">Habit library</h2>
               <button id="openHabitDialog" type="button" class="primary">New habit</button>
+            </div>
+            <div class="habit-tabs" role="tablist">
+              <button
+                id="habitTabActive"
+                type="button"
+                role="tab"
+                aria-selected="true"
+                class="tab-button is-active"
+                data-library-filter="active"
+              >
+                Active
+              </button>
+              <button
+                id="habitTabArchived"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                class="tab-button"
+                data-library-filter="archived"
+              >
+                Archived
+              </button>
             </div>
             <ul id="habitLibrary" class="habit-library"></ul>
           </section>
