@@ -12,6 +12,8 @@ const dayFormatter = new Intl.DateTimeFormat("en", {
   day: "numeric",
 });
 
+const CALENDAR_COLUMNS = 20;
+
 const state = {
   data: loadData(),
   viewMonth: startOfMonth(new Date()),
@@ -491,23 +493,28 @@ function calculateStreak(habitId, uptoIso = state.selectedDate) {
 }
 
 function getCalendarMatrix(viewMonth) {
-  const first = startOfMonth(viewMonth);
-  const start = new Date(first);
-  const day = first.getDay();
-  const mondayOffset = (day + 6) % 7;
-  start.setDate(first.getDate() - mondayOffset);
+  const monthStart = startOfMonth(viewMonth);
+  const monthIndex = monthStart.getMonth();
+  const year = monthStart.getFullYear();
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
 
-  const weeks = [];
-  for (let week = 0; week < 6; week += 1) {
-    const days = [];
-    for (let d = 0; d < 7; d += 1) {
-      const current = new Date(start);
-      current.setDate(start.getDate() + week * 7 + d);
-      days.push(current);
-    }
-    weeks.push(days);
+  const days = [];
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    days.push(new Date(year, monthIndex, day));
   }
-  return weeks;
+
+  const rows = Math.ceil(days.length / CALENDAR_COLUMNS);
+  const matrix = [];
+  for (let row = 0; row < rows; row += 1) {
+    const cells = [];
+    for (let col = 0; col < CALENDAR_COLUMNS; col += 1) {
+      const index = row * CALENDAR_COLUMNS + col;
+      cells.push(days[index] || null);
+    }
+    matrix.push(cells);
+  }
+
+  return matrix;
 }
 
 function intensityForHabit(dateIso, habit) {
@@ -1041,8 +1048,8 @@ function renderCalendar() {
     return;
   }
 
-  const weeks = getCalendarMatrix(state.viewMonth);
-  const monthIndex = state.viewMonth.getMonth();
+  const matrix = getCalendarMatrix(state.viewMonth);
+  document.documentElement.style.setProperty("--calendar-columns", CALENDAR_COLUMNS);
   const todayIso = formatISO(new Date());
   const selectedIso = state.selectedDate;
   const selectedHabit = state.data.habits.find((habit) => habit.id === state.selectedHabitId);
@@ -1054,8 +1061,8 @@ function renderCalendar() {
   });
 
   active.forEach((habit) => {
-    const row = document.createElement("div");
-    row.className = "calendar-row";
+    const habitBlock = document.createElement("div");
+    habitBlock.className = "habit-calendar";
     const label = document.createElement("button");
     label.className = "habit-pill";
     label.style.setProperty("--habit-color", habit.color || varFallbackColor());
@@ -1068,15 +1075,21 @@ function renderCalendar() {
     const cellsWrapper = document.createElement("div");
     cellsWrapper.className = "calendar-cells";
 
-    weeks.forEach((week) => {
-      week.forEach((date) => {
-        const iso = formatISO(date);
+    matrix.forEach((rowDates) => {
+      rowDates.forEach((date) => {
         const cell = document.createElement("button");
         cell.type = "button";
         cell.className = "calendar-cell";
-        if (date.getMonth() !== monthIndex) {
-          cell.classList.add("is-outside");
+        if (!date) {
+          cell.classList.add("is-empty");
+          cell.disabled = true;
+          cell.setAttribute("aria-hidden", "true");
+          cell.tabIndex = -1;
+          cellsWrapper.appendChild(cell);
+          return;
         }
+
+        const iso = formatISO(date);
         if (iso > todayIso) {
           cell.classList.add("is-future");
           cell.disabled = true;
@@ -1115,8 +1128,8 @@ function renderCalendar() {
       });
     });
 
-    row.append(label, cellsWrapper);
-    rows.appendChild(row);
+    habitBlock.append(label, cellsWrapper);
+    rows.appendChild(habitBlock);
   });
 }
 
