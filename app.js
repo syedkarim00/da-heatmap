@@ -19,6 +19,7 @@ const state = {
   searchTerm: "",
   noteContext: null,
   habitEditing: null,
+  lastToggledTodo: null,
 };
 
 const elements = {
@@ -44,11 +45,10 @@ const elements = {
   habitArchived: document.getElementById("habitArchived"),
   habitCancel: document.getElementById("habitCancel"),
   calendarRows: document.getElementById("calendarRows"),
-  journalDateLabel: document.getElementById("journalDateLabel"),
-  dayJournal: document.getElementById("dayJournal"),
-  saveJournal: document.getElementById("saveJournal"),
-  journalStatus: document.getElementById("journalStatus"),
-  journalHistory: document.getElementById("journalHistory"),
+  todoForm: document.getElementById("todoForm"),
+  todoInput: document.getElementById("todoInput"),
+  todoList: document.getElementById("todoList"),
+  clearCompletedTodos: document.getElementById("clearCompletedTodos"),
   noteDialog: document.getElementById("noteDialog"),
   noteForm: document.getElementById("noteForm"),
   noteText: document.getElementById("noteText"),
@@ -68,6 +68,9 @@ function loadData() {
     const parsed = JSON.parse(stored);
     if (!parsed.habits || !Array.isArray(parsed.habits)) {
       throw new Error("Invalid data");
+    }
+    if (!parsed.todos || !Array.isArray(parsed.todos)) {
+      parsed.todos = [];
     }
     return parsed;
   } catch (error) {
@@ -126,6 +129,22 @@ function createSeedData() {
 
   const entries = {};
   const journals = {};
+  const todos = [
+    {
+      id: "todo-focus",
+      text: "Plan tomorrow in 5 minutes",
+      done: false,
+      createdAt: new Date().toISOString(),
+      completedAt: null,
+    },
+    {
+      id: "todo-review",
+      text: "Review notes after evening routine",
+      done: false,
+      createdAt: new Date().toISOString(),
+      completedAt: null,
+    },
+  ];
 
   for (let i = 0; i < 40; i += 1) {
     const date = new Date(today);
@@ -170,6 +189,7 @@ function createSeedData() {
     habits,
     entries,
     journals,
+    todos,
   };
 }
 
@@ -246,13 +266,46 @@ function setEntryNote(dateIso, habitId, note) {
   saveData();
 }
 
-function setJournal(dateIso, content) {
-  const trimmed = content.trim();
-  if (!trimmed) {
-    delete state.data.journals[dateIso];
-  } else {
-    state.data.journals[dateIso] = trimmed;
+function addTodo(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  const unique =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const id = `todo-${unique}`;
+
+  state.data.todos.push({
+    id,
+    text: trimmed,
+    done: false,
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+  });
+  saveData();
+  return id;
+}
+
+function toggleTodo(id) {
+  const todo = state.data.todos.find((item) => item.id === id);
+  if (!todo) return;
+  todo.done = !todo.done;
+  todo.completedAt = todo.done ? new Date().toISOString() : null;
+  saveData();
+}
+
+function removeTodo(id) {
+  state.data.todos = state.data.todos.filter((item) => item.id !== id);
+  saveData();
+}
+
+function clearCompletedTodos() {
+  const remaining = state.data.todos.filter((item) => !item.done);
+  if (remaining.length === state.data.todos.length) {
+    return;
   }
+  state.data.todos = remaining;
   saveData();
 }
 
@@ -331,6 +384,48 @@ function intensityForHabit(dateIso, habitId) {
   return 1;
 }
 
+function hexToRgb(color) {
+  if (!color) {
+    return { r: 56, g: 189, b: 248 };
+  }
+  let hex = color.replace("#", "");
+  if (hex.length === 3) {
+    hex = hex
+      .split("")
+      .map((char) => char + char)
+      .join("");
+  }
+  const int = parseInt(hex, 16);
+  return {
+    r: (int >> 16) & 255,
+    g: (int >> 8) & 255,
+    b: int & 255,
+  };
+}
+
+function shadeForIntensity(color, intensity) {
+  const { r, g, b } = hexToRgb(color || varFallbackColor());
+  const alphaMap = {
+    1: 0.35,
+    2: 0.55,
+    3: 0.75,
+    4: 0.92,
+  };
+  const alpha = alphaMap[intensity] || 0.35;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function borderForIntensity(color, intensity) {
+  const { r, g, b } = hexToRgb(color || varFallbackColor());
+  const alphaMap = {
+    1: 0.35,
+    2: 0.45,
+    3: 0.55,
+    4: 0.7,
+  };
+  return `rgba(${r}, ${g}, ${b}, ${alphaMap[intensity] || 0.35})`;
+}
+
 function openHabitForm(habit) {
   if (habit) {
     elements.habitFormTitle.textContent = "Edit habit";
@@ -374,7 +469,6 @@ function renderSelectedDate() {
   const date = parseISO(state.selectedDate);
   elements.selectedDayLabel.textContent = dayFormatter.format(date);
   elements.dateSelector.value = state.selectedDate;
-  elements.journalDateLabel.textContent = dayFormatter.format(date);
 
   const completion = calculateCompletion(state.selectedDate);
   elements.metricDone.textContent = `${completion.done}/${completion.total}`;
@@ -526,6 +620,95 @@ function renderHabitLibrary() {
     });
 }
 
+function renderTodos() {
+  const list = elements.todoList;
+  list.innerHTML = "";
+
+  const todos = state.data.todos
+    .slice()
+    .sort((a, b) => {
+      if (a.done === b.done) {
+        return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+      }
+      return a.done ? 1 : -1;
+    });
+
+  if (todos.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "muted empty-message";
+    empty.textContent = "Add a focus to-do to keep discipline sharp.";
+    list.appendChild(empty);
+    elements.clearCompletedTodos.disabled = true;
+    elements.clearCompletedTodos.setAttribute("aria-disabled", "true");
+    state.lastToggledTodo = null;
+    return;
+  }
+
+  let hasCompleted = false;
+
+  todos.forEach((todo) => {
+    const item = document.createElement("li");
+    item.className = "todo-item";
+    if (todo.done) {
+      item.classList.add("is-done");
+      hasCompleted = true;
+    }
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "todo-toggle";
+    toggle.setAttribute("aria-pressed", todo.done ? "true" : "false");
+    toggle.setAttribute(
+      "aria-label",
+      todo.done ? `Mark ${todo.text} as not done` : `Mark ${todo.text} as done`
+    );
+    toggle.addEventListener("click", () => {
+      state.lastToggledTodo = { id: todo.id, done: !todo.done };
+      toggleTodo(todo.id);
+      render();
+    });
+
+    const checkmark = document.createElement("span");
+    checkmark.className = "checkmark";
+    toggle.appendChild(checkmark);
+
+    const text = document.createElement("span");
+    text.className = "todo-text";
+    text.textContent = todo.text;
+
+    const actions = document.createElement("div");
+    actions.className = "todo-actions";
+
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "ghost icon-only";
+    removeButton.setAttribute("aria-label", `Remove ${todo.text}`);
+    removeButton.innerHTML = "&times;";
+    removeButton.addEventListener("click", () => {
+      removeTodo(todo.id);
+      render();
+    });
+
+    actions.appendChild(removeButton);
+
+    item.append(toggle, text, actions);
+    list.appendChild(item);
+
+    if (state.lastToggledTodo && state.lastToggledTodo.id === todo.id && todo.done) {
+      requestAnimationFrame(() => {
+        item.classList.add("is-burst");
+        setTimeout(() => {
+          item.classList.remove("is-burst");
+        }, 600);
+      });
+    }
+  });
+
+  elements.clearCompletedTodos.disabled = !hasCompleted;
+  elements.clearCompletedTodos.setAttribute("aria-disabled", hasCompleted ? "false" : "true");
+  state.lastToggledTodo = null;
+}
+
 function varFallbackColor() {
   return "#38bdf8";
 }
@@ -546,6 +729,13 @@ function renderCalendar() {
   const monthIndex = state.viewMonth.getMonth();
   const todayIso = formatISO(new Date());
   const selectedIso = state.selectedDate;
+  const selectedHabit = state.data.habits.find((habit) => habit.id === state.selectedHabitId);
+  const legendColor = selectedHabit && selectedHabit.color ? selectedHabit.color : varFallbackColor();
+  document.documentElement.style.setProperty("--active-habit-color", legendColor);
+  [1, 2, 3, 4].forEach((level) => {
+    document.documentElement.style.setProperty(`--legend-shade-${level}`, shadeForIntensity(legendColor, level));
+    document.documentElement.style.setProperty(`--legend-border-${level}`, borderForIntensity(legendColor, level));
+  });
 
   active.forEach((habit) => {
     const row = document.createElement("div");
@@ -577,9 +767,15 @@ function renderCalendar() {
         }
         const entry = getEntry(iso, habit.id);
         if (entry && entry.done) {
-          cell.classList.add("is-done");
           const intensity = intensityForHabit(iso, habit.id);
+          const shade = shadeForIntensity(habit.color, intensity);
+          cell.classList.add("is-done");
           cell.classList.add(`level-${intensity}`);
+          cell.style.setProperty("--cell-color", shade);
+          cell.style.setProperty("--cell-border-color", borderForIntensity(habit.color, intensity));
+        } else {
+          cell.style.removeProperty("--cell-color");
+          cell.style.removeProperty("--cell-border-color");
         }
         if (entry && entry.note) {
           cell.classList.add("has-note");
@@ -618,27 +814,6 @@ function renderCalendar() {
   });
 }
 
-function renderJournal() {
-  const journal = state.data.journals[state.selectedDate] || "";
-  elements.dayJournal.value = journal;
-  elements.journalStatus.textContent = "";
-
-  const entries = Object.entries(state.data.journals)
-    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-    .slice(0, 6);
-  elements.journalHistory.innerHTML = "";
-  entries.forEach(([dateIso, content]) => {
-    const item = document.createElement("li");
-    const heading = document.createElement("h4");
-    heading.textContent = dayFormatter.format(parseISO(dateIso));
-    const snippet = document.createElement("p");
-    snippet.className = "journal-snippet";
-    snippet.textContent = content.length > 160 ? `${content.slice(0, 157)}…` : content;
-    item.append(heading, snippet);
-    elements.journalHistory.appendChild(item);
-  });
-}
-
 function render() {
   ensureSelectedHabit();
   renderMonthControls();
@@ -646,8 +821,8 @@ function render() {
   renderTodayList();
   renderQuickSearch();
   renderHabitLibrary();
+  renderTodos();
   renderCalendar();
-  renderJournal();
 }
 
 elements.prevMonth.addEventListener("click", () => {
@@ -714,6 +889,24 @@ elements.habitDialog.addEventListener("close", () => {
   state.habitEditing = null;
 });
 
+elements.todoForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const value = elements.todoInput.value.trim();
+  if (!value) {
+    return;
+  }
+  const id = addTodo(value);
+  elements.todoInput.value = "";
+  state.lastToggledTodo = { id, done: false };
+  render();
+  elements.todoInput.focus();
+});
+
+elements.clearCompletedTodos.addEventListener("click", () => {
+  clearCompletedTodos();
+  render();
+});
+
 elements.habitForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const name = elements.habitName.value.trim();
@@ -749,15 +942,6 @@ elements.habitForm.addEventListener("submit", (event) => {
   saveData();
   closeHabitForm();
   render();
-});
-
-elements.saveJournal.addEventListener("click", () => {
-  setJournal(state.selectedDate, elements.dayJournal.value);
-  elements.journalStatus.textContent = "Saved";
-  setTimeout(() => {
-    elements.journalStatus.textContent = "";
-  }, 2000);
-  renderJournal();
 });
 
 elements.noteCancel.addEventListener("click", () => {

@@ -116,24 +116,26 @@
           </div>
         </section>
 
-        <section class="journal-column">
-          <div class="card journal-card" aria-labelledby="journalHeading">
+        <section class="tasks-column">
+          <div class="card tasks-card" aria-labelledby="tasksHeading">
             <header class="section-header">
-              <h2 id="journalHeading">Habit journals</h2>
-              <p class="muted">Capture context alongside your streaks.</p>
-            </header>
-            <div class="journal-editor">
-              <label for="dayJournal">Journal for <span id="journalDateLabel"></span></label>
-              <textarea id="dayJournal" rows="6" placeholder="What stood out today?"></textarea>
-              <div class="journal-actions">
-                <button id="saveJournal" type="button" class="primary">Save journal</button>
-                <span id="journalStatus" class="muted" role="status"></span>
+              <div>
+                <h2 id="tasksHeading">Focus to-dos</h2>
+                <p class="muted">Stack quick wins next to your habit streaks.</p>
               </div>
-            </div>
-            <div class="journal-history">
-              <h3>Recent entries</h3>
-              <ul id="journalHistory" class="journal-list"></ul>
-            </div>
+              <button id="clearCompletedTodos" type="button" class="ghost">Clear completed</button>
+            </header>
+            <form id="todoForm" class="todo-form" autocomplete="off">
+              <input
+                id="todoInput"
+                type="text"
+                placeholder="Add a focus task..."
+                aria-label="Add a focus task"
+                required
+              />
+              <button type="submit" class="primary">Add</button>
+            </form>
+            <ul id="todoList" class="todo-list" aria-live="polite"></ul>
           </div>
         </section>
       </main>

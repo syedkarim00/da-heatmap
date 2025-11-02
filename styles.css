@@ -17,6 +17,7 @@
   --heatmap-2: #38bdf84d;
   --heatmap-3: #38bdf880;
   --heatmap-4: #0ea5e9;
+  --active-habit-color: var(--accent);
 }
 
 * {
@@ -205,6 +206,11 @@ button.ghost:hover {
 .muted {
   color: var(--text-muted);
   font-size: 0.9rem;
+}
+
+.empty-message {
+  text-align: center;
+  padding: 1rem 0.5rem;
 }
 
 .date-controls {
@@ -406,6 +412,43 @@ button.ghost:hover {
   height: 100%;
 }
 
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.legend-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(148, 163, 184, 0.12);
+  transition: background 0.2s ease, border 0.2s ease;
+}
+
+.legend-swatch.level-1 {
+  background: var(--legend-shade-1, rgba(56, 189, 248, 0.35));
+  border-color: var(--legend-border-1, rgba(56, 189, 248, 0.4));
+}
+
+.legend-swatch.level-2 {
+  background: var(--legend-shade-2, rgba(56, 189, 248, 0.55));
+  border-color: var(--legend-border-2, rgba(56, 189, 248, 0.5));
+}
+
+.legend-swatch.level-3 {
+  background: var(--legend-shade-3, rgba(56, 189, 248, 0.75));
+  border-color: var(--legend-border-3, rgba(56, 189, 248, 0.6));
+}
+
+.legend-swatch.level-4 {
+  background: var(--legend-shade-4, rgba(56, 189, 248, 0.92));
+  border-color: var(--legend-border-4, rgba(56, 189, 248, 0.7));
+}
+
 .calendar-grid {
   margin-top: 1.5rem;
   display: grid;
@@ -466,9 +509,9 @@ button.ghost:hover {
   width: var(--grid-size);
   height: var(--grid-size);
   border-radius: 10px;
-  border: 1px solid transparent;
-  background: var(--heatmap-0);
-  transition: transform 0.15s ease, border 0.15s ease, background 0.2s ease;
+  border: 1px solid var(--cell-border-color, rgba(148, 163, 184, 0.22));
+  background: var(--cell-color, var(--heatmap-0));
+  transition: transform 0.15s ease, border 0.15s ease, background 0.2s ease, box-shadow 0.2s ease;
   position: relative;
 }
 
@@ -480,25 +523,17 @@ button.ghost:hover {
   opacity: 0.3;
 }
 
-.calendar-cell.is-done.level-1 {
-  background: var(--heatmap-1);
-}
-
-.calendar-cell.is-done.level-2 {
-  background: var(--heatmap-2);
-}
-
-.calendar-cell.is-done.level-3 {
-  background: var(--heatmap-3);
+.calendar-cell.is-done {
+  background: var(--cell-color, rgba(56, 189, 248, 0.4));
+  border-color: var(--cell-border-color, rgba(56, 189, 248, 0.45));
 }
 
 .calendar-cell.is-done.level-4 {
-  background: var(--heatmap-4);
-  border-color: rgba(14, 165, 233, 0.7);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 8px 16px rgba(15, 23, 42, 0.35);
 }
 
 .calendar-cell.is-selected {
-  border-color: rgba(250, 204, 21, 0.8);
+  border-color: rgba(250, 204, 21, 0.8) !important;
   box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.35);
 }
 
@@ -516,60 +551,155 @@ button.ghost:hover {
   border-color: rgba(56, 189, 248, 0.6);
 }
 
-.journal-column {
+.tasks-column {
   display: flex;
   flex-direction: column;
 }
 
-.journal-editor {
+.tasks-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.todo-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.75rem;
+}
+
+#todoInput {
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.45);
+  padding: 0.7rem 0.85rem;
+  color: var(--text-primary);
+}
+
+.todo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: grid;
   gap: 0.75rem;
 }
 
-#dayJournal {
-  width: 100%;
-  border-radius: var(--radius-md);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(15, 23, 42, 0.45);
-  padding: 0.75rem 1rem;
-  resize: vertical;
-  min-height: 160px;
-}
-
-.journal-actions {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.journal-history {
-  margin-top: 1.75rem;
-}
-
-.journal-list {
-  list-style: none;
-  margin: 0.75rem 0 0;
-  padding: 0;
+.todo-item {
   display: grid;
-  gap: 0.9rem;
-}
-
-.journal-list li {
-  padding: 0.85rem 1rem;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.75rem 0.85rem;
   border-radius: var(--radius-md);
   background: rgba(148, 163, 184, 0.07);
   border: 1px solid rgba(148, 163, 184, 0.18);
+  position: relative;
+  overflow: hidden;
 }
 
-.journal-list h4 {
-  margin: 0 0 0.4rem;
-  font-size: 1rem;
+.todo-item.is-burst {
+  animation: todo-burst 0.6s ease-out;
 }
 
-.journal-snippet {
-  font-size: 0.9rem;
+.todo-toggle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.55);
+  display: grid;
+  place-items: center;
+  transition: transform 0.2s ease, border 0.2s ease, background 0.2s ease;
+}
+
+.todo-toggle:hover {
+  transform: scale(1.05);
+  border-color: rgba(148, 163, 184, 0.5);
+}
+
+.todo-toggle:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.6);
+  outline-offset: 2px;
+}
+
+.checkmark {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 2px solid rgba(148, 163, 184, 0.5);
+  position: relative;
+  transition: border 0.2s ease, background 0.2s ease;
+}
+
+.checkmark::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 0px;
+  width: 6px;
+  height: 12px;
+  border-right: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  transform: rotate(45deg);
+  transition: border 0.2s ease;
+}
+
+.todo-text {
+  font-weight: 500;
+}
+
+.todo-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.todo-item.is-done .todo-toggle {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.todo-item.is-done .checkmark {
+  background: rgba(56, 189, 248, 0.3);
+  border-color: rgba(56, 189, 248, 0.7);
+}
+
+.todo-item.is-done .checkmark::after {
+  border-right-color: rgba(8, 47, 73, 0.85);
+  border-bottom-color: rgba(8, 47, 73, 0.85);
+}
+
+.todo-item.is-done .todo-text {
   color: var(--text-muted);
-  line-height: 1.5;
+  text-decoration: line-through;
+}
+
+button.ghost.icon-only {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+
+button.ghost.icon-only:hover {
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+@keyframes todo-burst {
+  0% {
+    transform: scale(0.98);
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.45);
+  }
+  60% {
+    transform: scale(1.04);
+    box-shadow: 0 0 0 16px rgba(56, 189, 248, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0);
+  }
 }
 
 .modal {
@@ -637,7 +767,7 @@ button.ghost:hover {
     grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
     grid-template-areas:
       "sidebar calendar"
-      "sidebar journal";
+      "sidebar tasks";
   }
 
   .sidebar {
@@ -648,8 +778,8 @@ button.ghost:hover {
     grid-area: calendar;
   }
 
-  .journal-column {
-    grid-area: journal;
+  .tasks-column {
+    grid-area: tasks;
   }
 }
 
@@ -664,7 +794,7 @@ button.ghost:hover {
     grid-template-areas:
       "sidebar"
       "calendar"
-      "journal";
+      "tasks";
     padding: 1.5rem;
   }
 
