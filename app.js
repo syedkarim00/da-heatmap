@@ -38,7 +38,7 @@ const HEATMAP_VIEWS = {
   year: {
     key: "year",
     label: "Year view",
-    columns: 53,
+    columns: 50,
     rows: 7,
     gridSize: "clamp(10px, 2vw, 16px)",
   },
