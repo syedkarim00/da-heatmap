@@ -40,9 +40,6 @@
                 <h2 id="todayHeading">Selected day</h2>
                 <p id="selectedDayLabel" class="muted"></p>
               </div>
-              <div class="date-controls">
-                <input type="date" id="dateSelector" />
-              </div>
             </header>
             <div class="today-list" aria-live="polite">
               <h3>Log habits</h3>
@@ -98,7 +95,10 @@
         <section class="calendar-column">
           <div class="card calendar-card" aria-labelledby="calendarHeading">
             <div class="section-header">
-              <h2 id="calendarHeading">Habit heatmap</h2>
+              <div class="calendar-heading">
+                <h2 id="calendarHeading">Habit heatmap</h2>
+                <p id="calendarViewLabel" class="muted small"></p>
+              </div>
               <div class="legend" aria-hidden="true">
                 <span>Less</span>
                 <span class="legend-swatch level-1"></span>
@@ -166,6 +166,43 @@
         <footer class="modal-actions">
           <button type="button" id="habitCancel" class="ghost">Cancel</button>
           <button type="submit" class="primary">Save</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="heatmapSettingsDialog" class="modal">
+      <form id="heatmapSettingsForm" method="dialog" class="modal-content">
+        <header>
+          <h2>Heatmap view</h2>
+          <p class="muted">Choose how many days to show in each habit grid.</p>
+        </header>
+        <fieldset class="radio-group">
+          <legend class="visually-hidden">Heatmap range</legend>
+          <label class="radio-option">
+            <input type="radio" name="heatmapView" value="week" />
+            <span>
+              <strong>Week view</strong>
+              <small>Focus on the last 7 days.</small>
+            </span>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="heatmapView" value="month" checked />
+            <span>
+              <strong>Month view</strong>
+              <small>Track this month at a glance.</small>
+            </span>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="heatmapView" value="year" />
+            <span>
+              <strong>Year view</strong>
+              <small>See streaks across the full year.</small>
+            </span>
+          </label>
+        </fieldset>
+        <footer class="modal-actions">
+          <button type="button" id="heatmapSettingsCancel" class="ghost">Cancel</button>
+          <button type="submit" class="primary">Apply</button>
         </footer>
       </form>
     </dialog>

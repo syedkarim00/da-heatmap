@@ -12,25 +12,63 @@ const dayFormatter = new Intl.DateTimeFormat("en", {
   day: "numeric",
 });
 
-const CALENDAR_COLUMNS = 20;
+const shortDayFormatter = new Intl.DateTimeFormat("en", {
+  month: "short",
+  day: "numeric",
+});
+
+const DEFAULT_SETTINGS = {
+  heatmapView: "month",
+};
+
+const HEATMAP_VIEWS = {
+  week: {
+    key: "week",
+    label: "Week view",
+    columns: 7,
+    rows: 1,
+    gridSize: "clamp(26px, 5vw, 40px)",
+  },
+  month: {
+    key: "month",
+    label: "Month view",
+    columns: 15,
+    gridSize: "clamp(18px, 3vw, 28px)",
+  },
+  year: {
+    key: "year",
+    label: "Year view",
+    columns: 53,
+    rows: 7,
+    gridSize: "clamp(10px, 2vw, 16px)",
+  },
+};
+
+const loadedData = loadData();
+const today = new Date();
+const initialSelectedDate = formatISO(today);
+const initialView = getViewConfig(
+  loadedData.settings && loadedData.settings.heatmapView
+).key;
 
 const state = {
-  data: loadData(),
-  viewMonth: startOfMonth(new Date()),
-  selectedDate: formatISO(new Date()),
+  data: loadedData,
+  heatmapView: initialView,
+  viewAnchor: getAnchorForView(initialView, today),
+  selectedDate: initialSelectedDate,
   selectedHabitId: null,
   searchTerm: "",
   habitEditing: null,
   lastToggledTodo: null,
   lastLoggedHabit: null,
   libraryFilter: "active",
+  heatmapSettingsHabit: null,
 };
 
 const elements = {
   monthLabel: document.getElementById("monthLabel"),
   prevMonth: document.getElementById("prevMonth"),
   nextMonth: document.getElementById("nextMonth"),
-  dateSelector: document.getElementById("dateSelector"),
   selectedDayLabel: document.getElementById("selectedDayLabel"),
   todayHabitList: document.getElementById("todayHabitList"),
   habitSearch: document.getElementById("habitSearch"),
@@ -49,11 +87,15 @@ const elements = {
   addSubHabit: document.getElementById("addSubHabit"),
   subHabitList: document.getElementById("subHabitList"),
   calendarRows: document.getElementById("calendarRows"),
+  calendarViewLabel: document.getElementById("calendarViewLabel"),
   todoForm: document.getElementById("todoForm"),
   todoInput: document.getElementById("todoInput"),
   todoList: document.getElementById("todoList"),
   clearCompletedTodos: document.getElementById("clearCompletedTodos"),
   resetData: document.getElementById("resetData"),
+  heatmapSettingsDialog: document.getElementById("heatmapSettingsDialog"),
+  heatmapSettingsForm: document.getElementById("heatmapSettingsForm"),
+  heatmapSettingsCancel: document.getElementById("heatmapSettingsCancel"),
 };
 
 function loadData() {
@@ -101,8 +143,32 @@ function saveData() {
   });
 }
 
+function ensureSettingsObject() {
+  if (!state.data.settings || typeof state.data.settings !== "object") {
+    state.data.settings = { ...DEFAULT_SETTINGS };
+  }
+}
+
 function startOfMonth(date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function startOfWeek(date) {
+  const reference = new Date(date);
+  const day = reference.getDay();
+  reference.setDate(reference.getDate() - day);
+  reference.setHours(0, 0, 0, 0);
+  return reference;
+}
+
+function startOfYear(date) {
+  return new Date(date.getFullYear(), 0, 1);
+}
+
+function addDays(date, amount) {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() + amount);
+  return copy;
 }
 
 function formatISO(date) {
@@ -110,6 +176,44 @@ function formatISO(date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function isValidHeatmapView(view) {
+  return !!(view && HEATMAP_VIEWS[view]);
+}
+
+function getViewConfig(view) {
+  if (view && HEATMAP_VIEWS[view]) {
+    return HEATMAP_VIEWS[view];
+  }
+  return HEATMAP_VIEWS[DEFAULT_SETTINGS.heatmapView];
+}
+
+function getAnchorForView(view, referenceDate) {
+  const ref = new Date(referenceDate);
+  switch (view) {
+    case "week":
+      return startOfWeek(ref);
+    case "year":
+      return startOfYear(ref);
+    case "month":
+    default:
+      return startOfMonth(ref);
+  }
+}
+
+function getTotalDaysForView(anchor, view) {
+  if (view === "week") {
+    return 7;
+  }
+  if (view === "year") {
+    const year = anchor.getFullYear();
+    const isLeap = new Date(year, 1, 29).getMonth() === 1;
+    return isLeap ? 366 : 365;
+  }
+  const monthIndex = anchor.getMonth();
+  const year = anchor.getFullYear();
+  return new Date(year, monthIndex + 1, 0).getDate();
 }
 
 function createUniqueId(prefix) {
@@ -255,6 +359,7 @@ function createSeedData() {
     habits,
     entries,
     todos,
+    settings: { ...DEFAULT_SETTINGS },
   };
 }
 
@@ -288,6 +393,15 @@ function migrateData(data) {
 
   if (!next.entries || typeof next.entries !== "object") {
     next.entries = {};
+  }
+
+  if (!next.settings || typeof next.settings !== "object") {
+    next.settings = { ...DEFAULT_SETTINGS };
+  } else {
+    next.settings = { ...DEFAULT_SETTINGS, ...next.settings };
+    if (!isValidHeatmapView(next.settings.heatmapView)) {
+      next.settings.heatmapView = DEFAULT_SETTINGS.heatmapView;
+    }
   }
 
   Object.entries(next.entries).forEach(([dateIso, habitEntries]) => {
@@ -339,6 +453,32 @@ function ensureSelectedHabit() {
   }
   if (!state.selectedHabitId || !active.some((habit) => habit.id === state.selectedHabitId)) {
     state.selectedHabitId = active[0].id;
+  }
+}
+
+function ensureSelectedDateWithinView() {
+  const selected = parseISO(state.selectedDate);
+  const anchor = new Date(state.viewAnchor);
+  if (state.heatmapView === "week") {
+    const start = startOfWeek(anchor);
+    const end = addDays(start, 6);
+    if (selected < start || selected > end) {
+      state.selectedDate = formatISO(start);
+    }
+    return;
+  }
+  if (state.heatmapView === "year") {
+    const start = startOfYear(anchor);
+    const end = new Date(start.getFullYear(), 11, 31);
+    if (selected < start || selected > end) {
+      state.selectedDate = formatISO(start);
+    }
+    return;
+  }
+  const start = startOfMonth(anchor);
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+  if (selected < start || selected > end) {
+    state.selectedDate = formatISO(start);
   }
 }
 
@@ -492,29 +632,51 @@ function calculateStreak(habitId, uptoIso = state.selectedDate) {
   return streak;
 }
 
-function getCalendarMatrix(viewMonth) {
-  const monthStart = startOfMonth(viewMonth);
-  const monthIndex = monthStart.getMonth();
-  const year = monthStart.getFullYear();
-  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+function getCalendarMatrix(anchorDate, view) {
+  const config = getViewConfig(view);
+  const anchor = new Date(anchorDate);
+  let dates = [];
 
-  const days = [];
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    days.push(new Date(year, monthIndex, day));
+  if (view === "week") {
+    const start = startOfWeek(anchor);
+    for (let index = 0; index < 7; index += 1) {
+      dates.push(addDays(start, index));
+    }
+  } else if (view === "year") {
+    const start = startOfYear(anchor);
+    const total = getTotalDaysForView(start, view);
+    for (let index = 0; index < total; index += 1) {
+      dates.push(addDays(start, index));
+    }
+  } else {
+    const start = startOfMonth(anchor);
+    const monthIndex = start.getMonth();
+    const year = start.getFullYear();
+    const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      dates.push(new Date(year, monthIndex, day));
+    }
   }
 
-  const rows = Math.ceil(days.length / CALENDAR_COLUMNS);
+  const columns = config.columns;
+  const rows = config.rows || Math.ceil(dates.length / columns);
+  const totalCells = rows * columns;
+  const padded = dates.slice();
+  while (padded.length < totalCells) {
+    padded.push(null);
+  }
+
   const matrix = [];
   for (let row = 0; row < rows; row += 1) {
-    const cells = [];
-    for (let col = 0; col < CALENDAR_COLUMNS; col += 1) {
-      const index = row * CALENDAR_COLUMNS + col;
-      cells.push(days[index] || null);
-    }
-    matrix.push(cells);
+    const startIndex = row * columns;
+    matrix.push(padded.slice(startIndex, startIndex + columns));
   }
 
-  return matrix;
+  return {
+    matrix,
+    columns,
+    gridSize: config.gridSize,
+  };
 }
 
 function intensityForHabit(dateIso, habit) {
@@ -688,6 +850,40 @@ function deleteHabit(habitId) {
   render();
 }
 
+function openHeatmapSettings(habit) {
+  ensureSettingsObject();
+  if (habit && habit.id) {
+    state.selectedHabitId = habit.id;
+    state.heatmapSettingsHabit = habit.id;
+    render();
+  }
+  if (!elements.heatmapSettingsForm || !elements.heatmapSettingsDialog) {
+    return;
+  }
+  const radios = elements.heatmapSettingsForm.querySelectorAll('input[name="heatmapView"]');
+  radios.forEach((radio) => {
+    radio.checked = radio.value === state.heatmapView;
+  });
+  elements.heatmapSettingsDialog.showModal();
+}
+
+function closeHeatmapSettings() {
+  if (elements.heatmapSettingsDialog && elements.heatmapSettingsDialog.open) {
+    elements.heatmapSettingsDialog.close();
+  }
+}
+
+function updateHeatmapView(nextView) {
+  const config = getViewConfig(nextView);
+  state.heatmapView = config.key;
+  ensureSettingsObject();
+  state.data.settings.heatmapView = config.key;
+  const reference = parseISO(state.selectedDate);
+  state.viewAnchor = getAnchorForView(config.key, reference);
+  ensureSelectedDateWithinView();
+  saveData();
+}
+
 function openHabitForm(habit) {
   if (habit) {
     elements.habitFormTitle.textContent = "Edit habit";
@@ -713,13 +909,31 @@ function closeHabitForm() {
 }
 
 function renderMonthControls() {
-  elements.monthLabel.textContent = monthFormatter.format(state.viewMonth);
+  const anchor = new Date(state.viewAnchor);
+  let label = "";
+  if (state.heatmapView === "week") {
+    const start = startOfWeek(anchor);
+    const end = addDays(start, 6);
+    label = `Week of ${shortDayFormatter.format(start)} – ${shortDayFormatter.format(end)}`;
+  } else if (state.heatmapView === "year") {
+    label = `${anchor.getFullYear()}`;
+  } else {
+    label = monthFormatter.format(anchor);
+  }
+  if (elements.monthLabel) {
+    elements.monthLabel.textContent = label;
+  }
+  if (elements.calendarViewLabel) {
+    const config = getViewConfig(state.heatmapView);
+    const totalDays = getTotalDaysForView(anchor, state.heatmapView);
+    const suffix = totalDays ? ` • ${totalDays} days` : "";
+    elements.calendarViewLabel.textContent = `${config.label}${suffix}`;
+  }
 }
 
 function renderSelectedDate() {
   const date = parseISO(state.selectedDate);
   elements.selectedDayLabel.textContent = dayFormatter.format(date);
-  elements.dateSelector.value = state.selectedDate;
   ensureSelectedHabit();
 }
 
@@ -936,6 +1150,7 @@ function renderHabitLibrary() {
         deleteHabit(habit.id);
       }
     });
+    remove.classList.add("trailing");
 
     actions.append(edit, archive, remove);
     item.append(actions);
@@ -1048,8 +1263,11 @@ function renderCalendar() {
     return;
   }
 
-  const matrix = getCalendarMatrix(state.viewMonth);
-  document.documentElement.style.setProperty("--calendar-columns", CALENDAR_COLUMNS);
+  const { matrix, columns, gridSize } = getCalendarMatrix(state.viewAnchor, state.heatmapView);
+  document.documentElement.style.setProperty("--calendar-columns", columns);
+  if (gridSize) {
+    document.documentElement.style.setProperty("--grid-size", gridSize);
+  }
   const todayIso = formatISO(new Date());
   const selectedIso = state.selectedDate;
   const selectedHabit = state.data.habits.find((habit) => habit.id === state.selectedHabitId);
@@ -1067,9 +1285,10 @@ function renderCalendar() {
     label.className = "habit-pill";
     label.style.setProperty("--habit-color", habit.color || varFallbackColor());
     label.textContent = habit.name;
+    label.setAttribute("aria-haspopup", "dialog");
+    label.title = "Open heatmap settings";
     label.addEventListener("click", () => {
-      state.selectedHabitId = habit.id;
-      render();
+      openHeatmapSettings(habit);
     });
 
     const cellsWrapper = document.createElement("div");
@@ -1135,6 +1354,7 @@ function renderCalendar() {
 
 function render() {
   ensureSelectedHabit();
+  ensureSelectedDateWithinView();
   renderMonthControls();
   renderSelectedDate();
   renderTodayList();
@@ -1144,35 +1364,28 @@ function render() {
   renderCalendar();
 }
 
-elements.prevMonth.addEventListener("click", () => {
-  const view = new Date(state.viewMonth);
-  view.setMonth(state.viewMonth.getMonth() - 1);
-  state.viewMonth = startOfMonth(view);
-  const selected = parseISO(state.selectedDate);
-  if (selected.getMonth() !== state.viewMonth.getMonth() || selected.getFullYear() !== state.viewMonth.getFullYear()) {
-    state.selectedDate = formatISO(state.viewMonth);
+function shiftView(direction) {
+  const anchor = new Date(state.viewAnchor);
+  if (state.heatmapView === "week") {
+    anchor.setDate(anchor.getDate() + direction * 7);
+    state.viewAnchor = getAnchorForView("week", anchor);
+  } else if (state.heatmapView === "year") {
+    anchor.setFullYear(anchor.getFullYear() + direction);
+    state.viewAnchor = getAnchorForView("year", anchor);
+  } else {
+    anchor.setMonth(anchor.getMonth() + direction);
+    state.viewAnchor = getAnchorForView("month", anchor);
   }
+  ensureSelectedDateWithinView();
   render();
+}
+
+elements.prevMonth.addEventListener("click", () => {
+  shiftView(-1);
 });
 
 elements.nextMonth.addEventListener("click", () => {
-  const view = new Date(state.viewMonth);
-  view.setMonth(state.viewMonth.getMonth() + 1);
-  state.viewMonth = startOfMonth(view);
-  const selected = parseISO(state.selectedDate);
-  if (selected.getMonth() !== state.viewMonth.getMonth() || selected.getFullYear() !== state.viewMonth.getFullYear()) {
-    state.selectedDate = formatISO(state.viewMonth);
-  }
-  render();
-});
-
-elements.dateSelector.addEventListener("change", (event) => {
-  const value = event.target.value;
-  if (!value) return;
-  state.selectedDate = value;
-  const date = parseISO(value);
-  state.viewMonth = startOfMonth(date);
-  render();
+  shiftView(1);
 });
 
 elements.habitSearch.addEventListener("input", (event) => {
@@ -1233,6 +1446,31 @@ elements.habitDialog.addEventListener("close", () => {
   state.habitEditing = null;
 });
 
+if (elements.heatmapSettingsCancel) {
+  elements.heatmapSettingsCancel.addEventListener("click", () => {
+    closeHeatmapSettings();
+  });
+}
+
+if (elements.heatmapSettingsForm) {
+  elements.heatmapSettingsForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const formData = new FormData(elements.heatmapSettingsForm);
+    const view = formData.get("heatmapView");
+    if (view && typeof view === "string") {
+      updateHeatmapView(view);
+    }
+    closeHeatmapSettings();
+    render();
+  });
+}
+
+if (elements.heatmapSettingsDialog) {
+  elements.heatmapSettingsDialog.addEventListener("close", () => {
+    state.heatmapSettingsHabit = null;
+  });
+}
+
 elements.todoForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const value = elements.todoInput.value.trim();
@@ -1291,10 +1529,14 @@ elements.habitForm.addEventListener("submit", (event) => {
 elements.resetData.addEventListener("click", () => {
   if (confirm("Reset tracker to seeded demo data?")) {
     state.data = createSeedData();
-    state.viewMonth = startOfMonth(new Date());
-    state.selectedDate = formatISO(new Date());
+    const now = new Date();
+    const view = getViewConfig(state.data.settings && state.data.settings.heatmapView);
+    state.heatmapView = view.key;
+    state.viewAnchor = getAnchorForView(state.heatmapView, now);
+    state.selectedDate = formatISO(now);
     state.searchTerm = "";
     state.libraryFilter = "active";
+    state.heatmapSettingsHabit = null;
     saveData();
     render();
   }

@@ -22,6 +22,17 @@
   --active-habit-color: var(--accent);
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -213,20 +224,6 @@ button.ghost:hover {
 .empty-message {
   text-align: center;
   padding: 1rem 0.5rem;
-}
-
-.date-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.date-controls input[type="date"] {
-  background: rgba(15, 23, 42, 0.4);
-  border: 1px solid var(--surface-border);
-  border-radius: var(--radius-sm);
-  padding: 0.4rem 0.75rem;
-  color: var(--text-primary);
 }
 
 .today-list {
@@ -539,8 +536,22 @@ button.ghost:hover {
   font-size: 1rem;
 }
 
+.habit-actions .trailing {
+  margin-left: auto;
+}
+
 .calendar-card {
   height: 100%;
+}
+
+.calendar-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.muted.small {
+  font-size: 0.75rem;
 }
 
 .legend {
@@ -594,7 +605,7 @@ button.ghost:hover {
 .habit-calendar {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.75rem;
 }
 
@@ -614,6 +625,7 @@ button.ghost:hover {
   overflow: hidden;
   white-space: nowrap;
   margin: 0 auto;
+  cursor: pointer;
 }
 
 .habit-pill::before {
@@ -632,7 +644,8 @@ button.ghost:hover {
   grid-template-columns: repeat(var(--calendar-columns), var(--grid-size));
   grid-auto-rows: var(--grid-size);
   gap: 0.35rem;
-  justify-content: flex-start;
+  justify-content: center;
+  margin: 0 auto;
   width: max-content;
 }
 
@@ -917,6 +930,46 @@ button.ghost.icon-only:hover {
   display: flex;
   justify-content: flex-end;
   gap: 0.75rem;
+}
+
+.radio-group {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.radio-option {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.75rem 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.45);
+  cursor: pointer;
+}
+
+.radio-option:hover {
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.radio-option input[type="radio"] {
+  margin-top: 0.2rem;
+}
+
+.radio-option span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.radio-option strong {
+  font-size: 0.95rem;
+}
+
+.radio-option small {
+  color: var(--text-muted);
+  font-size: 0.75rem;
 }
 
 .toggle {
