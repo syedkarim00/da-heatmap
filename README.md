@@ -1,33 +1,37 @@
-# Daily Alignment Heatmap
+# Life of Discipline-inspired Habit Tracker
 
-A minimalist habit tracker that leans on heatmaps, streak psychology, and a weekly reflection loop. It is designed to make it easy to “win the day,” protect streaks with one weekly grace day, and visualize progress with multiple heatmap modes.
+A single-page web app that recreates the Life of Discipline heatmap experience: click any calendar cell to log a habit, leave daily journal notes, and review streaks at a glance.
 
-## Features
+## Highlights
 
-- ✅ **Quick check-ins:** Today’s habits are one tap away, and the app opens on the current day.
-- 🔥 **Streak protection:** Mark a habit done or use one weekly grace day that keeps streaks alive without counting as progress.
-- 🎨 **Multiple heatmaps:** Switch between combined day view, per-habit rows, streak cards, and weekly success rates.
-- 🧱 **Weekly recap:** See how many days you showed up, how many habits you’re tracking, and which streak is on fire.
-- ➕ **On-device habit creation:** Add new habits with frequency, category, color, and visibility options. Habits are archived by toggling their visibility off.
-- 🧠 **Tiny habit encouragement:** Metadata for each habit highlights its age and current streak to keep motivation high.
+- 🗓️ **Per-habit heatmaps:** Scrollable month view that mirrors Life of Discipline’s calendar rows. Click any cell (past or present) to toggle completion.
+- 📝 **Habit journals:** Right-click or use the action buttons to attach context to each habit entry. Journals are surfaced in a dedicated panel with recent history.
+- 🔍 **Quick logging:** Search a habit by name and hit enter to instantly log it for the selected day.
+- 📚 **Habit library:** Edit colors, archive habits without losing history, and seed the heatmap with inspiring defaults.
+- 🧭 **Daily focus panel:** Jump to any date, monitor completion rate, and keep your current streak in view.
 
-All data is stored locally in `localStorage`—no accounts or sync required.
+All information is stored locally in `localStorage`. No accounts or servers are required.
 
 ## Getting started
 
-1. Open `index.html` in your browser (double-click from Finder/Explorer or run a static file server).
-2. Add the page to your phone’s home screen for an app-like experience.
-3. Tap today’s habits to light up the heatmap and keep your streak alive.
+1. Clone or download this repository.
+2. Open `index.html` in a modern browser. (For the best experience, serve it via a simple static server.)
+3. Explore the seeded data, then create your own habits from the library panel.
 
-## Development notes
+## Keyboard and mouse tips
 
-- The UI is built with vanilla HTML, CSS, and JavaScript—no dependencies.
-- Heatmap colors follow an encouraging palette. Misses stay neutral; wins get progressively richer.
-- Grace days are stored per ISO week (`YYYY-Www`), with the allowance configured in `app.js` under `settings.skipAllowancePerWeek`.
-- To reset the app, clear the `da-heatmap-data-v1` entry from your browser’s `localStorage`.
+- **Enter** while in the search box toggles the first matching habit for the selected day.
+- **Right-click** any heatmap cell (or use the “Add note” buttons in the daily list) to open its journal editor.
+- **Today** button jumps back to the current date and month.
 
-## Future ideas
+## Resetting the demo
 
-- GPT-powered habit suggestions based on natural-language prompts.
-- Predictive reminders that recommend better scheduling when you routinely miss a habit.
-- Sunday reflections that help prune or recommit to habits for the coming week.
+Press the **Reset data** button in the top bar to restore the original seeded entries and journals. You can also clear the `lod-tracker-data-v2` key from your browser’s developer tools.
+
+## Tech stack
+
+- Vanilla HTML, CSS, and JavaScript
+- CSS glassmorphism styling to echo the Life of Discipline aesthetic
+- No build tools or frameworks required
+
+Feel free to adapt the visuals or extend the journaling logic to match your own ritual.
