@@ -29,7 +29,6 @@ const elements = {
   prevMonth: document.getElementById("prevMonth"),
   nextMonth: document.getElementById("nextMonth"),
   dateSelector: document.getElementById("dateSelector"),
-  jumpToday: document.getElementById("jumpToday"),
   selectedDayLabel: document.getElementById("selectedDayLabel"),
   todayHabitList: document.getElementById("todayHabitList"),
   habitSearch: document.getElementById("habitSearch"),
@@ -491,20 +490,6 @@ function calculateStreak(habitId, uptoIso = state.selectedDate) {
   return streak;
 }
 
-function calculateTotalCompletions(habitId) {
-  const habit = getHabitById(habitId);
-  if (!habit) {
-    return 0;
-  }
-  return Object.entries(state.data.entries).reduce((count, [dateIso, dayEntries]) => {
-    const entry = dayEntries[habitId];
-    if (!entry) {
-      return count;
-    }
-    return isHabitComplete(dateIso, habit) ? count + 1 : count;
-  }, 0);
-}
-
 function getCalendarMatrix(viewMonth) {
   const first = startOfMonth(viewMonth);
   const start = new Date(first);
@@ -847,16 +832,11 @@ function renderQuickSearch() {
     const title = document.createElement("span");
     title.className = "habit-name";
     title.textContent = habit.name;
-    const stats = document.createElement("span");
-    stats.className = "habit-stats";
-    const streak = calculateStreak(habit.id);
-    const progress = getHabitProgress(state.selectedDate, habit);
-    const noun = progress.total === 1 ? "checkpoint" : "checkpoints";
-    stats.textContent = `${progress.done}/${progress.total} ${noun} today • ${calculateTotalCompletions(habit.id)} perfect days • ${streak} day streak`;
-    meta.append(title, stats);
+    meta.append(title);
 
     const action = document.createElement("button");
     action.type = "button";
+    const progress = getHabitProgress(state.selectedDate, habit);
     const isComplete = progress.total > 0 && progress.done === progress.total;
     action.textContent = isComplete ? "Reset" : "Log all";
     action.addEventListener("click", () => {
@@ -902,6 +882,8 @@ function renderHabitLibrary() {
 
   habits.forEach((habit) => {
     const item = document.createElement("li");
+    item.className = "habit-library-item";
+
     const meta = document.createElement("div");
     meta.className = "habit-meta";
 
@@ -912,17 +894,21 @@ function renderHabitLibrary() {
     dot.style.color = habit.color || varFallbackColor();
     dot.style.background = habit.color || varFallbackColor();
     const name = document.createElement("span");
+    name.className = "habit-name-text";
     name.textContent = habit.name;
     title.append(dot, name);
 
     meta.append(title);
+    item.append(meta);
 
     const actions = document.createElement("div");
     actions.className = "habit-actions";
+
     const edit = document.createElement("button");
     edit.type = "button";
     edit.textContent = "Edit";
     edit.addEventListener("click", () => openHabitForm(habit));
+
     const archive = document.createElement("button");
     archive.type = "button";
     archive.textContent = habit.archived ? "Unarchive" : "Archive";
@@ -931,19 +917,21 @@ function renderHabitLibrary() {
       saveData();
       render();
     });
+
     const remove = document.createElement("button");
     remove.type = "button";
-    remove.className = "danger";
-    remove.textContent = "Delete";
+    remove.className = "danger icon-only";
+    remove.setAttribute("aria-label", `Delete ${habit.name}`);
+    remove.innerHTML = "<span aria-hidden=\"true\">🗑</span>";
     remove.addEventListener("click", () => {
-      const message = `Delete "${habit.name}" and remove its history? This can’t be undone.`;
+      const message = `Delete \"${habit.name}\" and remove its history? This can’t be undone.`;
       if (window.confirm(message)) {
         deleteHabit(habit.id);
       }
     });
-    actions.append(edit, archive, remove);
 
-    item.append(meta, actions);
+    actions.append(edit, archive, remove);
+    item.append(actions);
     list.appendChild(item);
   });
 }
@@ -1171,13 +1159,6 @@ elements.dateSelector.addEventListener("change", (event) => {
   state.selectedDate = value;
   const date = parseISO(value);
   state.viewMonth = startOfMonth(date);
-  render();
-});
-
-elements.jumpToday.addEventListener("click", () => {
-  const today = new Date();
-  state.selectedDate = formatISO(today);
-  state.viewMonth = startOfMonth(today);
   render();
 });
 
