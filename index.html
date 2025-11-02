@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Habit tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="top-bar">
+        <div class="brand-block">
+          <div class="brand-mark">HT</div>
+          <div class="brand-copy">
+            <h1>Habit tracker</h1>
+            <p>Calendar heatmaps and focus to-dos for consistent progress.</p>
+          </div>
+        </div>
+        <div class="month-switcher" aria-live="polite">
+          <button id="prevMonth" type="button" aria-label="Previous month">&#8592;</button>
+          <div id="monthLabel" class="month-label"></div>
+          <button id="nextMonth" type="button" aria-label="Next month">&#8594;</button>
+        </div>
+        <div class="top-actions">
+          <button id="resetData" type="button" class="ghost">Reset data</button>
+        </div>
+      </header>
+
+      <main class="app-layout">
+        <aside class="sidebar">
+          <section class="card today-card" aria-labelledby="todayHeading">
+            <header class="section-header">
+              <div>
+                <h2 id="todayHeading">Selected day</h2>
+                <p id="selectedDayLabel" class="muted"></p>
+              </div>
+              <div class="date-controls">
+                <input type="date" id="dateSelector" />
+              </div>
+            </header>
+            <div class="today-list" aria-live="polite">
+              <h3>Log habits</h3>
+              <ul id="todayHabitList" class="habit-checklist"></ul>
+            </div>
+            <div class="quick-log">
+              <div class="quick-log-header">
+                <h3>Quick log</h3>
+                <p class="muted">Search a habit, hit enter to toggle.</p>
+              </div>
+              <input
+                id="habitSearch"
+                type="search"
+                placeholder="Search habits..."
+                aria-label="Search habits"
+                autocomplete="off"
+              />
+              <ul id="searchResults" class="search-results"></ul>
+            </div>
+          </section>
+
+          <section class="card library-card" aria-labelledby="habitLibraryHeading">
+            <div class="section-header">
+              <h2 id="habitLibraryHeading">Habit library</h2>
+              <button id="openHabitDialog" type="button" class="primary">New habit</button>
+            </div>
+            <div class="habit-tabs" role="tablist">
+              <button
+                id="habitTabActive"
+                type="button"
+                role="tab"
+                aria-selected="true"
+                class="tab-button is-active"
+                data-library-filter="active"
+              >
+                Active
+              </button>
+              <button
+                id="habitTabArchived"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                class="tab-button"
+                data-library-filter="archived"
+              >
+                Archived
+              </button>
+            </div>
+            <ul id="habitLibrary" class="habit-library"></ul>
+          </section>
+        </aside>
+
+        <section class="calendar-column">
+          <div class="card calendar-card" aria-labelledby="calendarHeading">
+            <div class="section-header">
+              <h2 id="calendarHeading">Habit heatmap</h2>
+              <div class="legend" aria-hidden="true">
+                <span>Less</span>
+                <span class="legend-swatch level-1"></span>
+                <span class="legend-swatch level-2"></span>
+                <span class="legend-swatch level-3"></span>
+                <span class="legend-swatch level-4"></span>
+                <span>More</span>
+              </div>
+            </div>
+            <div class="calendar-grid" role="table">
+              <div id="calendarRows" class="calendar-rows"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="tasks-column">
+          <div class="card tasks-card" aria-labelledby="tasksHeading">
+            <header class="section-header">
+              <div>
+                <h2 id="tasksHeading">Focus to-dos</h2>
+                <p class="muted">Stack quick wins next to your habit streaks.</p>
+              </div>
+              <button id="clearCompletedTodos" type="button" class="ghost">Clear completed</button>
+            </header>
+            <form id="todoForm" class="todo-form" autocomplete="off">
+              <input
+                id="todoInput"
+                type="text"
+                placeholder="Add a focus task..."
+                aria-label="Add a focus task"
+                required
+              />
+              <button type="submit" class="primary">Add</button>
+            </form>
+            <ul id="todoList" class="todo-list" aria-live="polite"></ul>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="habitDialog" class="modal">
+      <form id="habitForm" method="dialog" class="modal-content">
+        <header>
+          <h2 id="habitFormTitle">New habit</h2>
+        </header>
+        <label>
+          Name
+          <input type="text" id="habitName" required />
+        </label>
+        <label>
+          Color
+          <input type="color" id="habitColor" value="#2563eb" />
+        </label>
+        <div class="subhabit-builder">
+          <div class="subhabit-header">
+            <span>Sub-habits</span>
+            <button type="button" id="addSubHabit" class="ghost">Add sub-habit</button>
+          </div>
+          <p class="muted">Create checkpoints like specific prayer times or meal slots.</p>
+          <ul id="subHabitList" class="subhabit-list-inputs"></ul>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="habitArchived" /> Archive habit
+        </label>
+        <footer class="modal-actions">
+          <button type="button" id="habitCancel" class="ghost">Cancel</button>
+          <button type="submit" class="primary">Save</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
