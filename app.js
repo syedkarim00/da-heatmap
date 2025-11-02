@@ -915,12 +915,7 @@ function renderHabitLibrary() {
     name.textContent = habit.name;
     title.append(dot, name);
 
-    const stats = document.createElement("div");
-    stats.className = "habit-stats";
-    const status = habit.archived ? "Archived" : "Active";
-    stats.textContent = `${status} • ${habit.subHabits.length} checkpoints • ${calculateTotalCompletions(habit.id)} perfect days`;
-
-    meta.append(title, stats);
+    meta.append(title);
 
     const actions = document.createElement("div");
     actions.className = "habit-actions";
