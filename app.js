@@ -29,7 +29,6 @@ const elements = {
   prevMonth: document.getElementById("prevMonth"),
   nextMonth: document.getElementById("nextMonth"),
   dateSelector: document.getElementById("dateSelector"),
-  jumpToday: document.getElementById("jumpToday"),
   selectedDayLabel: document.getElementById("selectedDayLabel"),
   todayHabitList: document.getElementById("todayHabitList"),
   habitSearch: document.getElementById("habitSearch"),
@@ -902,6 +901,8 @@ function renderHabitLibrary() {
 
   habits.forEach((habit) => {
     const item = document.createElement("li");
+    item.className = "habit-library-item";
+
     const meta = document.createElement("div");
     meta.className = "habit-meta";
 
@@ -909,8 +910,9 @@ function renderHabitLibrary() {
     title.className = "habit-name-tag";
     const dot = document.createElement("span");
     dot.className = "habit-dot";
-    dot.style.color = habit.color || varFallbackColor();
-    dot.style.background = habit.color || varFallbackColor();
+    const color = habit.color || varFallbackColor();
+    dot.style.color = color;
+    dot.style.background = color;
     const name = document.createElement("span");
     name.textContent = habit.name;
     title.append(dot, name);
@@ -923,6 +925,7 @@ function renderHabitLibrary() {
     edit.type = "button";
     edit.textContent = "Edit";
     edit.addEventListener("click", () => openHabitForm(habit));
+
     const archive = document.createElement("button");
     archive.type = "button";
     archive.textContent = habit.archived ? "Unarchive" : "Archive";
@@ -931,10 +934,14 @@ function renderHabitLibrary() {
       saveData();
       render();
     });
+
     const remove = document.createElement("button");
     remove.type = "button";
-    remove.className = "danger";
-    remove.textContent = "Delete";
+    remove.className = "danger icon-only";
+    remove.innerHTML =
+      '<svg class="icon-trash" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3a1 1 0 0 0-.894.553L7.382 5H4a1 1 0 1 0 0 2h.528l.89 12.466A2 2 0 0 0 7.41 21h9.18a2 2 0 0 0 1.992-1.534L19.472 7H20a1 1 0 1 0 0-2h-3.382l-.724-1.447A1 1 0 0 0 14.894 3H9Zm1.618 2h2.764l.5 1H10.118l.5-1ZM8.53 7h6.94l.84 11.765a.25.25 0 0 1-.249.235H7.41a.25.25 0 0 1-.249-.235L8.53 7Z"/></svg><span class="sr-only">Delete</span>';
+    remove.setAttribute("aria-label", `Delete ${habit.name}`);
+    remove.title = `Delete ${habit.name}`;
     remove.addEventListener("click", () => {
       const message = `Delete "${habit.name}" and remove its history? This can’t be undone.`;
       if (window.confirm(message)) {
@@ -1171,13 +1178,6 @@ elements.dateSelector.addEventListener("change", (event) => {
   state.selectedDate = value;
   const date = parseISO(value);
   state.viewMonth = startOfMonth(date);
-  render();
-});
-
-elements.jumpToday.addEventListener("click", () => {
-  const today = new Date();
-  state.selectedDate = formatISO(today);
-  state.viewMonth = startOfMonth(today);
   render();
 });
 
