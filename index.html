@@ -45,20 +45,6 @@
                 <button id="jumpToday" type="button" class="ghost">Today</button>
               </div>
             </header>
-            <div class="today-metrics">
-              <div class="metric">
-                <span class="label">Habits done</span>
-                <span id="metricDone" class="value">0</span>
-              </div>
-              <div class="metric">
-                <span class="label">Completion rate</span>
-                <span id="metricRate" class="value">0%</span>
-              </div>
-              <div class="metric">
-                <span class="label">Focus streak</span>
-                <span id="metricStreak" class="value">0 days</span>
-              </div>
-            </div>
             <div class="today-list" aria-live="polite">
               <h3>Log habits</h3>
               <ul id="todayHabitList" class="habit-checklist"></ul>
@@ -154,26 +140,20 @@
           Color
           <input type="color" id="habitColor" value="#2563eb" />
         </label>
+        <div class="subhabit-builder">
+          <div class="subhabit-header">
+            <span>Sub-habits</span>
+            <button type="button" id="addSubHabit" class="ghost">Add sub-habit</button>
+          </div>
+          <p class="muted">Create checkpoints like specific prayer times or meal slots.</p>
+          <ul id="subHabitList" class="subhabit-list-inputs"></ul>
+        </div>
         <label class="toggle">
           <input type="checkbox" id="habitArchived" /> Archive habit
         </label>
         <footer class="modal-actions">
           <button type="button" id="habitCancel" class="ghost">Cancel</button>
           <button type="submit" class="primary">Save</button>
-        </footer>
-      </form>
-    </dialog>
-
-    <dialog id="noteDialog" class="modal">
-      <form id="noteForm" method="dialog" class="modal-content">
-        <header>
-          <h2>Habit journal</h2>
-          <p id="noteContext" class="muted"></p>
-        </header>
-        <textarea id="noteText" rows="6" placeholder="Add context for this habit on this day"></textarea>
-        <footer class="modal-actions">
-          <button type="button" id="noteCancel" class="ghost">Cancel</button>
-          <button type="submit" class="primary">Save note</button>
         </footer>
       </form>
     </dialog>
