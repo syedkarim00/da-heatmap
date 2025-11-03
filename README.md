@@ -21,7 +21,7 @@ All information is stored locally in `localStorage`. No accounts or servers are 
 
 1. Clone or download this repository.
 2. Open `index.html` in a modern browser. (For the best experience, serve it via a simple static server.)
-3. Explore the seeded data, then create your own habits from the library panel.
+3. Create your own habits from the library panel and start logging checkpoints from the daily list.
 
 ## Keyboard and mouse tips
 
@@ -31,9 +31,9 @@ All information is stored locally in `localStorage`. No accounts or servers are 
 - **Enter** inside the to-do input quickly adds a new focus task.
 - **Click a habit label** above the heatmap to switch between week, month, and year layouts, then adjust the weekly goal when relevant.
 
-## Resetting the demo
+## Resetting the tracker
 
-Press the **Reset data** button beneath the habit library to restore the original seeded entries and focus to-dos. You can also clear the `habit-tracker-data-v2` key from your browser’s developer tools.
+Press the **Reset data** button beneath the habit library to clear all saved habits, entries, and to-dos. You can also clear the `habit-tracker-data-v2` key from your browser’s developer tools.
 
 ## Tech stack
 

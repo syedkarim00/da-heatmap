@@ -360,163 +360,10 @@ function ratioToIntensity(ratio) {
 }
 
 function createSeedData() {
-  const today = new Date();
-  const habits = [
-    {
-      id: "habit-prayer",
-      name: "Daily prayers",
-      color: "#38bdf8",
-      archived: false,
-      createdAt: new Date(today.getFullYear(), today.getMonth() - 2, 1).toISOString(),
-      heatmapView: "year",
-      weeklyTarget: 5,
-      subHabits: [
-        { id: "habit-prayer-fajr", name: "Fajr" },
-        { id: "habit-prayer-dhuhr", name: "Dhuhr" },
-        { id: "habit-prayer-asr", name: "Asr" },
-        { id: "habit-prayer-maghrib", name: "Maghrib" },
-        { id: "habit-prayer-isha", name: "Isha" },
-      ],
-    },
-    {
-      id: "habit-reading",
-      name: "Read 10 pages",
-      color: "#f97316",
-      archived: false,
-      createdAt: new Date(today.getFullYear(), today.getMonth() - 2, 5).toISOString(),
-      heatmapView: "month",
-      weeklyTarget: 4,
-      subHabits: [{ id: "habit-reading-session", name: "Reading session" }],
-    },
-    {
-      id: "habit-meals",
-      name: "Nutritious meals",
-      color: "#22d3ee",
-      archived: false,
-      createdAt: new Date(today.getFullYear(), today.getMonth() - 1, 8).toISOString(),
-      heatmapView: "month",
-      weeklyTarget: 6,
-      subHabits: [
-        { id: "habit-meals-breakfast", name: "Breakfast" },
-        { id: "habit-meals-lunch", name: "Lunch" },
-        { id: "habit-meals-dinner", name: "Dinner" },
-      ],
-    },
-    {
-      id: "habit-steps",
-      name: "5k walk",
-      color: "#a855f7",
-      archived: false,
-      createdAt: new Date(today.getFullYear(), today.getMonth() - 1, 12).toISOString(),
-      heatmapView: "month",
-      weeklyTarget: 4,
-      subHabits: [{ id: "habit-steps-route", name: "Walk complete" }],
-    },
-    {
-      id: "habit-gym",
-      name: "Gym training",
-      color: "#ef4444",
-      archived: false,
-      createdAt: new Date(today.getFullYear(), today.getMonth() - 1, 3).toISOString(),
-      heatmapView: "week",
-      weeklyTarget: 3,
-      subHabits: [{ id: "habit-gym-session", name: "Session complete" }],
-    },
-  ];
-
-  const entries = {};
-  const todos = [
-    {
-      id: "todo-focus",
-      text: "Plan tomorrow in 5 minutes",
-      done: false,
-      createdAt: new Date().toISOString(),
-      completedAt: null,
-    },
-    {
-      id: "todo-review",
-      text: "Review notes after evening routine",
-      done: false,
-      createdAt: new Date().toISOString(),
-      completedAt: null,
-    },
-  ];
-
-  for (let i = 0; i < 40; i += 1) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - i);
-    const iso = formatISO(date);
-    const dayEntries = {};
-
-    if (i % 2 === 0) {
-      const subHabits = {
-        "habit-prayer-fajr": true,
-        "habit-prayer-dhuhr": true,
-        "habit-prayer-maghrib": true,
-      };
-      if (i % 4 !== 0) {
-        subHabits["habit-prayer-asr"] = true;
-      }
-      if (i % 6 !== 0) {
-        subHabits["habit-prayer-isha"] = true;
-      }
-      dayEntries["habit-prayer"] = {
-        subHabits,
-        updatedAt: new Date().toISOString(),
-      };
-    }
-
-    if (i % 3 !== 0) {
-      dayEntries["habit-reading"] = {
-        subHabits: {
-          "habit-reading-session": true,
-        },
-        updatedAt: new Date().toISOString(),
-      };
-    }
-
-    if (i % 5 !== 0) {
-      const mealSubs = {
-        "habit-meals-breakfast": true,
-        "habit-meals-dinner": true,
-      };
-      if (i % 7 !== 0) {
-        mealSubs["habit-meals-lunch"] = true;
-      }
-      dayEntries["habit-meals"] = {
-        subHabits: mealSubs,
-        updatedAt: new Date().toISOString(),
-      };
-    }
-
-    if (i % 4 !== 0) {
-      dayEntries["habit-steps"] = {
-        subHabits: {
-          "habit-steps-route": true,
-        },
-        updatedAt: new Date().toISOString(),
-      };
-    }
-
-    const weekday = date.getDay();
-    if ((weekday === 1 || weekday === 3 || weekday === 5) && i % 9 !== 0) {
-      dayEntries["habit-gym"] = {
-        subHabits: {
-          "habit-gym-session": true,
-        },
-        updatedAt: new Date().toISOString(),
-      };
-    }
-
-    if (Object.keys(dayEntries).length > 0) {
-      entries[iso] = dayEntries;
-    }
-  }
-
   return {
-    habits,
-    entries,
-    todos,
+    habits: [],
+    entries: {},
+    todos: [],
     settings: { ...DEFAULT_SETTINGS },
   };
 }
@@ -1877,7 +1724,7 @@ elements.habitForm.addEventListener("submit", (event) => {
 });
 
 elements.resetData.addEventListener("click", () => {
-  if (confirm("Reset tracker to seeded demo data?")) {
+  if (confirm("Reset tracker and clear all saved data?")) {
     state.data = createSeedData();
     const now = new Date();
     state.viewAnchors = createInitialAnchors(now);
