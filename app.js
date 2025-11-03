@@ -25,12 +25,12 @@ const DEFAULT_SETTINGS = {
 };
 
 const HEATMAP_VIEWS = {
-  week: {
-    key: "week",
+  weekDays: {
+    key: "weekDays",
     label: "Week view",
-    columns: 12,
+    columns: 7,
     rows: 1,
-    gridSize: "clamp(16px, 2.8vw, 24px)",
+    gridSize: "clamp(20px, 3.4vw, 30px)",
   },
   month: {
     key: "month",
@@ -38,10 +38,18 @@ const HEATMAP_VIEWS = {
     columns: 15,
     gridSize: "clamp(18px, 3vw, 28px)",
   },
+  week: {
+    key: "week",
+    label: "Weekly view",
+    columns: 12,
+    rows: 5,
+    weeks: 52,
+    gridSize: "clamp(14px, 2.6vw, 22px)",
+  },
   year: {
     key: "year",
     label: "Year view",
-    columns: 53,
+    columns: 50,
     rows: 7,
     gridSize: "clamp(10px, 2vw, 16px)",
   },
@@ -54,6 +62,7 @@ const state = {
   data: loadedData,
   viewAnchors: createInitialAnchors(today),
   selectedDate: initialSelectedDate,
+  selectedCalendarMonth: startOfMonth(today),
   selectedHabitId: null,
   searchTerm: "",
   habitEditing: null,
@@ -86,6 +95,7 @@ const elements = {
   subHabitList: document.getElementById("subHabitList"),
   calendarRows: document.getElementById("calendarRows"),
   calendarViewLabel: document.getElementById("calendarViewLabel"),
+  selectedDayCalendar: document.getElementById("selectedDayCalendar"),
   todoForm: document.getElementById("todoForm"),
   todoInput: document.getElementById("todoInput"),
   todoList: document.getElementById("todoList"),
@@ -179,6 +189,14 @@ function formatISO(date) {
   return `${year}-${month}-${day}`;
 }
 
+function updateSelectedDate(iso, syncCalendar = true) {
+  state.selectedDate = iso;
+  if (syncCalendar) {
+    const selected = parseISO(iso);
+    state.selectedCalendarMonth = startOfMonth(selected);
+  }
+}
+
 function isValidHeatmapView(view) {
   return !!(view && HEATMAP_VIEWS[view]);
 }
@@ -193,11 +211,12 @@ function getViewConfig(view) {
 function getAnchorForView(view, referenceDate) {
   const ref = new Date(referenceDate);
   switch (view) {
+    case "weekDays":
+      return startOfWeek(ref);
     case "week":
-      return addDays(
-        startOfWeek(ref),
-        -7 * Math.max(0, (getViewConfig("week").columns || 1) - 1)
-      );
+      const weekConfig = getViewConfig("week");
+      const totalWeeks = weekConfig.weeks || Math.max(1, (weekConfig.columns || 1) * (weekConfig.rows || 1));
+      return addDays(startOfWeek(ref), -7 * Math.max(0, totalWeeks - 1));
     case "year":
       return startOfYear(ref);
     case "month":
@@ -209,7 +228,11 @@ function getAnchorForView(view, referenceDate) {
 function getTotalDaysForView(anchor, view) {
   if (view === "week") {
     const config = getViewConfig("week");
-    return (config.columns || 1) * 7;
+    const weeks = config.weeks || Math.max(1, (config.columns || 1) * (config.rows || 1));
+    return weeks * 7;
+  }
+  if (view === "weekDays") {
+    return 7;
   }
   if (view === "year") {
     const year = anchor.getFullYear();
@@ -265,7 +288,13 @@ function getViewRange(view, anchor) {
   if (view === "week") {
     const config = getViewConfig("week");
     const start = base;
-    const end = addDays(start, (config.columns || 1) * 7 - 1);
+    const totalWeeks = config.weeks || Math.max(1, (config.columns || 1) * (config.rows || 1));
+    const end = addDays(start, totalWeeks * 7 - 1);
+    return { start, end };
+  }
+  if (view === "weekDays") {
+    const start = startOfWeek(base);
+    const end = addDays(start, 6);
     return { start, end };
   }
   if (view === "year") {
@@ -611,7 +640,9 @@ function ensureSelectedDateWithinView() {
   }
 
   const clampedSelected = clampDate(selectedDate, range.start, range.end);
-  state.selectedDate = formatISO(clampedSelected);
+  const iso = formatISO(clampedSelected);
+  const changed = iso !== state.selectedDate;
+  updateSelectedDate(iso, changed);
 }
 
 function getDayEntries(dateIso) {
@@ -789,10 +820,15 @@ function getCalendarMatrix(anchorDate, view) {
 
   if (view === "week") {
     const config = getViewConfig("week");
-    const totalWeeks = config.columns || 1;
+    const totalWeeks = config.weeks || Math.max(1, (config.columns || 1) * (config.rows || 1));
     const start = new Date(anchor);
     for (let index = 0; index < totalWeeks; index += 1) {
       dates.push(addDays(start, index * 7));
+    }
+  } else if (view === "weekDays") {
+    const start = startOfWeek(anchor);
+    for (let index = 0; index < 7; index += 1) {
+      dates.push(addDays(start, index));
     }
   } else if (view === "year") {
     const start = startOfYear(anchor);
@@ -1090,29 +1126,21 @@ function closeHabitForm() {
   elements.habitDialog.close();
 }
 
-function renderMonthControls() {
+function renderHeatmapMeta() {
   const habit = getHabitById(state.selectedHabitId);
   const view = getHabitView(habit);
   const anchor = getViewAnchor(view);
   const range = getViewRange(view, anchor);
-  let label = "";
-  if (view === "week") {
-    label = `${shortDayFormatter.format(range.start)} – ${shortDayFormatter.format(range.end)}`;
-  } else if (view === "year") {
-    label = `${range.start.getFullYear()}`;
-  } else {
-    label = monthFormatter.format(range.start);
-  }
-  if (elements.monthLabel) {
-    elements.monthLabel.textContent = label;
-  }
   if (elements.calendarViewLabel) {
     if (view === "week") {
-      const weeks = getViewConfig("week").columns || 1;
+      const config = getViewConfig("week");
+      const weeks = config.weeks || Math.max(1, (config.columns || 1) * (config.rows || 1));
       const targetText = habit
         ? ` • Goal ${getHabitWeeklyTarget(habit)}×/week`
         : "";
-      elements.calendarViewLabel.textContent = `Week view • ${weeks} weeks${targetText}`;
+      elements.calendarViewLabel.textContent = `Weekly view • ${weeks} weeks${targetText}`;
+    } else if (view === "weekDays") {
+      elements.calendarViewLabel.textContent = "Week view • 7 days";
     } else if (view === "year") {
       const totalDays = getTotalDaysForView(range.start, "year");
       elements.calendarViewLabel.textContent = `Year view • ${totalDays} days`;
@@ -1127,6 +1155,68 @@ function renderSelectedDate() {
   const date = parseISO(state.selectedDate);
   elements.selectedDayLabel.textContent = dayFormatter.format(date);
   ensureSelectedHabit();
+}
+
+function renderSelectedDayCalendar() {
+  if (!elements.selectedDayCalendar) {
+    return;
+  }
+
+  let month = state.selectedCalendarMonth
+    ? new Date(state.selectedCalendarMonth)
+    : startOfMonth(parseISO(state.selectedDate));
+
+  if (Number.isNaN(month.getTime())) {
+    month = startOfMonth(parseISO(state.selectedDate));
+  }
+
+  month = startOfMonth(month);
+  state.selectedCalendarMonth = new Date(month);
+
+  if (elements.monthLabel) {
+    elements.monthLabel.textContent = monthFormatter.format(month);
+  }
+
+  const grid = elements.selectedDayCalendar;
+  grid.innerHTML = "";
+  grid.setAttribute("aria-label", `Calendar for ${monthFormatter.format(month)}`);
+
+  const firstDay = month.getDay();
+  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const totalCells = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+  const firstCellDate = addDays(month, -firstDay);
+  const todayIso = formatISO(new Date());
+  const selectedIso = state.selectedDate;
+
+  for (let index = 0; index < totalCells; index += 1) {
+    const date = addDays(firstCellDate, index);
+    const iso = formatISO(date);
+    const cell = document.createElement("button");
+    cell.type = "button";
+    cell.className = "selected-calendar-cell";
+    cell.textContent = String(date.getDate());
+    cell.setAttribute("aria-label", dayFormatter.format(date));
+
+    if (date.getMonth() !== month.getMonth()) {
+      cell.classList.add("is-outside-month");
+    }
+
+    if (iso === todayIso) {
+      cell.classList.add("is-today");
+    }
+
+    if (iso === selectedIso) {
+      cell.classList.add("is-selected");
+      cell.setAttribute("aria-current", "date");
+    }
+
+    cell.addEventListener("click", () => {
+      updateSelectedDate(iso);
+      render();
+    });
+
+    grid.appendChild(cell);
+  }
 }
 
 function renderTodayList() {
@@ -1544,7 +1634,7 @@ function renderCalendar() {
             const focusDate = isDateInRange(today, weekStart, weekEnd)
               ? today
               : weekStart;
-            state.selectedDate = formatISO(focusDate);
+            updateSelectedDate(formatISO(focusDate));
             render();
           });
         } else {
@@ -1576,7 +1666,7 @@ function renderCalendar() {
           cell.setAttribute("aria-label", labelText);
 
           cell.addEventListener("click", () => {
-            state.selectedDate = iso;
+            updateSelectedDate(iso);
             state.selectedHabitId = habit.id;
             if (!cell.classList.contains("is-future")) {
               const complete = progress.total > 0 && progress.done === progress.total;
@@ -1598,8 +1688,9 @@ function renderCalendar() {
 function render() {
   ensureSelectedHabit();
   ensureSelectedDateWithinView();
-  renderMonthControls();
+  renderHeatmapMeta();
   renderSelectedDate();
+  renderSelectedDayCalendar();
   renderTodayList();
   renderQuickSearch();
   renderHabitLibrary();
@@ -1607,37 +1698,31 @@ function render() {
   renderCalendar();
 }
 
-function shiftView(direction) {
-  const habit = getHabitById(state.selectedHabitId);
-  if (!habit) {
+function shiftCalendarMonth(direction) {
+  const base = state.selectedCalendarMonth
+    ? new Date(state.selectedCalendarMonth)
+    : startOfMonth(parseISO(state.selectedDate));
+
+  if (Number.isNaN(base.getTime())) {
     return;
   }
-  const view = getHabitView(habit);
-  const anchor = getViewAnchor(view);
-  if (view === "week") {
-    const weeks = getViewConfig("week").columns || 1;
-    anchor.setDate(anchor.getDate() + direction * weeks * 7);
-    updateViewAnchor(view, anchor);
-  } else if (view === "year") {
-    anchor.setFullYear(anchor.getFullYear() + direction);
-    updateViewAnchor(view, anchor);
-  } else {
-    anchor.setMonth(anchor.getMonth() + direction);
-    updateViewAnchor(view, anchor);
-  }
-  const updatedAnchor = getViewAnchor(view);
-  const range = getViewRange(view, updatedAnchor);
-  state.selectedDate = formatISO(clampDate(new Date(), range.start, range.end));
-  render();
+
+  base.setMonth(base.getMonth() + direction);
+  state.selectedCalendarMonth = startOfMonth(base);
+  renderSelectedDayCalendar();
 }
 
-elements.prevMonth.addEventListener("click", () => {
-  shiftView(-1);
-});
+if (elements.prevMonth) {
+  elements.prevMonth.addEventListener("click", () => {
+    shiftCalendarMonth(-1);
+  });
+}
 
-elements.nextMonth.addEventListener("click", () => {
-  shiftView(1);
-});
+if (elements.nextMonth) {
+  elements.nextMonth.addEventListener("click", () => {
+    shiftCalendarMonth(1);
+  });
+}
 
 elements.habitSearch.addEventListener("input", (event) => {
   state.searchTerm = event.target.value;
@@ -1796,7 +1881,7 @@ elements.resetData.addEventListener("click", () => {
     state.data = createSeedData();
     const now = new Date();
     state.viewAnchors = createInitialAnchors(now);
-    state.selectedDate = formatISO(now);
+    updateSelectedDate(formatISO(now));
     state.selectedHabitId = null;
     state.searchTerm = "";
     state.libraryFilter = "active";

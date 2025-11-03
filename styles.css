@@ -83,79 +83,6 @@ button:disabled {
   flex-direction: column;
 }
 
-.top-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1.5rem 2.5rem;
-  gap: 2rem;
-  background: rgba(15, 23, 42, 0.92);
-  backdrop-filter: blur(24px);
-  border-bottom: 1px solid var(--surface-border);
-  position: sticky;
-  top: 0;
-  z-index: 20;
-}
-
-.brand-block {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.brand-mark {
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
-  background: linear-gradient(145deg, #38bdf8, #0ea5e9);
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-}
-
-.brand-copy h1 {
-  font-size: 1.6rem;
-}
-
-.brand-copy p {
-  margin-top: 0.25rem;
-  color: var(--text-muted);
-  max-width: 28ch;
-}
-
-.month-switcher {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  font-size: 1.1rem;
-}
-
-.month-switcher button {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1px solid var(--surface-border);
-  color: var(--text-primary);
-  background: rgba(148, 163, 184, 0.1);
-  transition: transform 0.2s ease, background 0.2s ease;
-}
-
-.month-switcher button:hover {
-  transform: translateY(-2px);
-  background: rgba(148, 163, 184, 0.2);
-}
-
-.month-label {
-  font-size: 1.2rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.top-actions {
-  margin-left: auto;
-}
-
 button.primary {
   background: linear-gradient(135deg, #38bdf8, #0ea5e9);
   color: #0b1120;
@@ -196,6 +123,15 @@ button.ghost:hover {
   gap: 1.75rem;
 }
 
+.reset-button {
+  width: 100%;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  font-weight: 500;
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--surface-border);
@@ -219,6 +155,101 @@ button.ghost:hover {
 .muted {
   color: var(--text-muted);
   font-size: 0.9rem;
+}
+
+.selected-calendar {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  --calendar-cell-size: clamp(2.4rem, 4vw, 3rem);
+}
+
+.selected-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.selected-calendar-header button {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--surface-border);
+  color: var(--text-primary);
+  background: rgba(148, 163, 184, 0.12);
+  transition: transform 0.2s ease, background 0.2s ease, border 0.2s ease;
+}
+
+.selected-calendar-header button:hover {
+  transform: translateY(-2px);
+  background: rgba(148, 163, 184, 0.24);
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.selected-calendar-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.selected-calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, var(--calendar-cell-size));
+  gap: 0.35rem;
+  justify-content: center;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin: 0 auto;
+}
+
+.selected-calendar-weekdays span {
+  display: grid;
+  place-items: center;
+}
+
+.selected-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, var(--calendar-cell-size));
+  gap: 0.35rem;
+  justify-content: center;
+}
+
+.selected-calendar-cell {
+  width: var(--calendar-cell-size);
+  height: var(--calendar-cell-size);
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.55);
+  color: var(--text-primary);
+  display: grid;
+  place-items: center;
+  font-size: 0.9rem;
+  transition: transform 0.2s ease, border 0.2s ease, background 0.2s ease;
+}
+
+.selected-calendar-cell.is-outside-month {
+  color: rgba(148, 163, 184, 0.45);
+}
+
+.selected-calendar-cell.is-today {
+  border-color: rgba(56, 189, 248, 0.6);
+}
+
+.selected-calendar-cell.is-selected {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: rgba(56, 189, 248, 0.8);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.28);
+}
+
+.selected-calendar-cell:hover {
+  transform: translateY(-1px);
+  border-color: rgba(56, 189, 248, 0.65);
 }
 
 .empty-message {

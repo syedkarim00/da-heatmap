@@ -14,24 +14,6 @@
   </head>
   <body>
     <div class="app-shell">
-      <header class="top-bar">
-        <div class="brand-block">
-          <div class="brand-mark">HT</div>
-          <div class="brand-copy">
-            <h1>Habit tracker</h1>
-            <p>Calendar heatmaps and focus to-dos for consistent progress.</p>
-          </div>
-        </div>
-        <div class="month-switcher" aria-live="polite">
-          <button id="prevMonth" type="button" aria-label="Previous month">&#8592;</button>
-          <div id="monthLabel" class="month-label"></div>
-          <button id="nextMonth" type="button" aria-label="Next month">&#8594;</button>
-        </div>
-        <div class="top-actions">
-          <button id="resetData" type="button" class="ghost">Reset data</button>
-        </div>
-      </header>
-
       <main class="app-layout">
         <aside class="sidebar">
           <section class="card today-card" aria-labelledby="todayHeading">
@@ -41,6 +23,23 @@
                 <p id="selectedDayLabel" class="muted"></p>
               </div>
             </header>
+            <div class="selected-calendar">
+              <div class="selected-calendar-header" aria-live="polite">
+                <button id="prevMonth" type="button" aria-label="Previous month">&#8592;</button>
+                <div id="monthLabel" class="selected-calendar-label"></div>
+                <button id="nextMonth" type="button" aria-label="Next month">&#8594;</button>
+              </div>
+              <div class="selected-calendar-weekdays" aria-hidden="true">
+                <span>Sun</span>
+                <span>Mon</span>
+                <span>Tue</span>
+                <span>Wed</span>
+                <span>Thu</span>
+                <span>Fri</span>
+                <span>Sat</span>
+              </div>
+              <div id="selectedDayCalendar" class="selected-calendar-grid" role="grid"></div>
+            </div>
             <div class="today-list" aria-live="polite">
               <h3>Log habits</h3>
               <ul id="todayHabitList" class="habit-checklist"></ul>
@@ -90,6 +89,7 @@
             </div>
             <ul id="habitLibrary" class="habit-library"></ul>
           </section>
+          <button id="resetData" type="button" class="ghost reset-button">Reset data</button>
         </aside>
 
         <section class="calendar-column">
@@ -179,10 +179,17 @@
         <fieldset class="radio-group">
           <legend class="visually-hidden">Heatmap range</legend>
           <label class="radio-option">
-            <input type="radio" name="heatmapView" value="week" />
+            <input type="radio" name="heatmapView" value="weekDays" />
             <span>
               <strong>Week view</strong>
-              <small>Focus on the last 7 days.</small>
+              <small>Seven-day focus with one cell per day.</small>
+            </span>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="heatmapView" value="week" />
+            <span>
+              <strong>Weekly view</strong>
+              <small>Track 52 weeks with intensity by weekly goal.</small>
             </span>
           </label>
           <label class="radio-option">
