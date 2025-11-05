@@ -214,13 +214,27 @@ function clearSelectionGlowTimer() {
   }
 }
 
+function applySelectionGlowState() {
+  const cells = document.querySelectorAll(
+    ".calendar-cell.is-selected, .selected-calendar-cell.is-selected"
+  );
+  cells.forEach((cell) => {
+    if (state.selectionGlowActive) {
+      cell.classList.add("has-glow");
+    } else {
+      cell.classList.remove("has-glow");
+    }
+  });
+}
+
 function triggerSelectionGlow() {
   state.selectionGlowActive = true;
   clearSelectionGlowTimer();
+  applySelectionGlowState();
   state.selectionGlowTimer = setTimeout(() => {
     state.selectionGlowActive = false;
     state.selectionGlowTimer = null;
-    render();
+    applySelectionGlowState();
   }, SELECTION_GLOW_DURATION);
 }
 
@@ -1406,6 +1420,12 @@ function renderSelectedDayCalendar() {
       render();
     });
 
+    cell.addEventListener("mouseenter", () => {
+      if (iso === state.selectedDate) {
+        triggerSelectionGlow();
+      }
+    });
+
     grid.appendChild(cell);
   }
 }
@@ -1746,10 +1766,24 @@ function renderCalendar() {
   const selectedDateObj = parseISO(selectedIso);
   const hasValidSelectedDate = !Number.isNaN(selectedDateObj.getTime());
 
+  let currentRow = null;
+  let currentRowView = null;
+
   active.forEach((habit) => {
+    const view = getHabitView(habit);
+
+    if (!currentRow || currentRowView !== view) {
+      currentRow = document.createElement("div");
+      currentRow.className = "habit-view-row";
+      currentRow.dataset.view = view;
+      rows.appendChild(currentRow);
+      currentRowView = view;
+    }
+
     const habitBlock = document.createElement("div");
     habitBlock.className = "habit-calendar";
     habitBlock.dataset.habitId = habit.id;
+    habitBlock.dataset.view = view;
     habitBlock.draggable = true;
 
     const header = document.createElement("div");
@@ -1825,7 +1859,7 @@ function renderCalendar() {
       }
       event.preventDefault();
       const rect = habitBlock.getBoundingClientRect();
-      const container = elements.calendarRows;
+      const container = habitBlock.parentElement || elements.calendarRows;
       const containerWidth = container ? container.clientWidth : rect.width;
       let gap = 0;
       if (container) {
@@ -1856,7 +1890,7 @@ function renderCalendar() {
       }
       event.preventDefault();
       const rect = habitBlock.getBoundingClientRect();
-      const container = elements.calendarRows;
+      const container = habitBlock.parentElement || elements.calendarRows;
       const containerWidth = container ? container.clientWidth : rect.width;
       let gap = 0;
       if (container) {
@@ -1877,7 +1911,6 @@ function renderCalendar() {
       render();
     });
 
-    const view = getHabitView(habit);
     const anchor = getViewAnchor(view);
     const { matrix, columns, gridSize } = getCalendarMatrix(anchor, view, habit);
     cellsWrapper.style.setProperty("--calendar-columns", columns);
@@ -1942,6 +1975,11 @@ function renderCalendar() {
             triggerSelectionGlow();
             render();
           });
+          cell.addEventListener("mouseenter", () => {
+            if (hasValidSelectedDate && isDateInRange(selectedDateObj, weekStart, weekEnd)) {
+              triggerSelectionGlow();
+            }
+          });
         } else {
           const iso = formatISO(date);
           if (iso > todayIso) {
@@ -1982,13 +2020,20 @@ function renderCalendar() {
             triggerSelectionGlow();
             render();
           });
+          cell.addEventListener("mouseenter", () => {
+            if (iso === state.selectedDate) {
+              triggerSelectionGlow();
+            }
+          });
         }
         cellsWrapper.appendChild(cell);
       });
     });
 
     habitBlock.append(header, cellsWrapper);
-    rows.appendChild(habitBlock);
+    if (currentRow) {
+      currentRow.appendChild(habitBlock);
+    }
   });
 }
 
@@ -2003,6 +2048,7 @@ function render() {
   renderHabitLibrary();
   renderTodos();
   renderCalendar();
+  applySelectionGlowState();
 }
 
 function shiftCalendarMonth(direction) {

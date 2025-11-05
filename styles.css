@@ -638,10 +638,23 @@ button.ghost:hover {
 
 .calendar-rows {
   display: flex;
+  flex-direction: column;
+  gap: 1.8rem;
+  align-items: stretch;
+  width: 100%;
+}
+
+.calendar-rows > p {
+  text-align: center;
+  width: 100%;
+}
+
+.habit-view-row {
+  display: flex;
   flex-wrap: wrap;
-  gap: 1.4rem;
-  justify-content: flex-start;
+  justify-content: center;
   align-items: flex-start;
+  gap: 1.4rem;
   width: 100%;
 }
 
