@@ -1705,7 +1705,13 @@ function renderCalendar() {
       if (state.dragHandleActive === habit.id) {
         state.dragHandleActive = null;
       }
-      habitBlock.classList.remove("is-dragging", "drag-before", "drag-after");
+      habitBlock.classList.remove(
+        "is-dragging",
+        "drag-before",
+        "drag-after",
+        "drop-horizontal",
+        "drop-vertical"
+      );
     });
 
     habitBlock.addEventListener("dragover", (event) => {
@@ -1715,13 +1721,28 @@ function renderCalendar() {
       }
       event.preventDefault();
       const rect = habitBlock.getBoundingClientRect();
-      const before = event.clientY < rect.top + rect.height / 2;
+      const container = elements.calendarRows;
+      const containerWidth = container ? container.clientWidth : rect.width;
+      let gap = 0;
+      if (container) {
+        const containerStyles = window.getComputedStyle(container);
+        const gapValue = containerStyles.columnGap || containerStyles.gap;
+        if (gapValue) {
+          gap = parseFloat(gapValue) || 0;
+        }
+      }
+      const multiColumn = containerWidth >= rect.width * 2 + gap;
+      const before = multiColumn
+        ? event.clientX < rect.left + rect.width / 2
+        : event.clientY < rect.top + rect.height / 2;
+      habitBlock.classList.toggle("drop-horizontal", multiColumn);
+      habitBlock.classList.toggle("drop-vertical", !multiColumn);
       habitBlock.classList.toggle("drag-before", before);
       habitBlock.classList.toggle("drag-after", !before);
     });
 
     habitBlock.addEventListener("dragleave", () => {
-      habitBlock.classList.remove("drag-before", "drag-after");
+      habitBlock.classList.remove("drag-before", "drag-after", "drop-horizontal", "drop-vertical");
     });
 
     habitBlock.addEventListener("drop", (event) => {
@@ -1731,8 +1752,21 @@ function renderCalendar() {
       }
       event.preventDefault();
       const rect = habitBlock.getBoundingClientRect();
-      const before = event.clientY < rect.top + rect.height / 2;
-      habitBlock.classList.remove("drag-before", "drag-after");
+      const container = elements.calendarRows;
+      const containerWidth = container ? container.clientWidth : rect.width;
+      let gap = 0;
+      if (container) {
+        const containerStyles = window.getComputedStyle(container);
+        const gapValue = containerStyles.columnGap || containerStyles.gap;
+        if (gapValue) {
+          gap = parseFloat(gapValue) || 0;
+        }
+      }
+      const multiColumn = containerWidth >= rect.width * 2 + gap;
+      const before = multiColumn
+        ? event.clientX < rect.left + rect.width / 2
+        : event.clientY < rect.top + rect.height / 2;
+      habitBlock.classList.remove("drag-before", "drag-after", "drop-horizontal", "drop-vertical");
       state.draggingHabitId = null;
       state.dragHandleActive = null;
       reorderHabits(draggingId, habit.id, before);

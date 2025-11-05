@@ -633,11 +633,16 @@ button.ghost:hover {
   margin-top: 1.5rem;
   display: grid;
   gap: 1.4rem;
+  width: 100%;
 }
 
 .calendar-rows {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 1.4rem;
+  justify-content: flex-start;
+  align-items: flex-start;
+  width: 100%;
 }
 
 .habit-calendar {
@@ -646,6 +651,9 @@ button.ghost:hover {
   align-items: center;
   gap: 0.65rem;
   position: relative;
+  flex: 0 0 auto;
+  width: max-content;
+  max-width: 100%;
 }
 
 .habit-calendar-header {
@@ -698,19 +706,38 @@ button.ghost:hover {
 .habit-calendar.drag-after::after {
   content: "";
   position: absolute;
-  left: 10%;
-  right: 10%;
-  height: 2px;
   background: rgba(56, 189, 248, 0.65);
   border-radius: 999px;
   z-index: 1;
 }
 
-.habit-calendar.drag-before::before {
+.habit-calendar.drop-horizontal.drag-before::before,
+.habit-calendar.drop-horizontal.drag-after::after {
+  top: 10%;
+  bottom: 10%;
+  width: 3px;
+}
+
+.habit-calendar.drop-horizontal.drag-before::before {
+  left: -0.65rem;
+}
+
+.habit-calendar.drop-horizontal.drag-after::after {
+  right: -0.65rem;
+}
+
+.habit-calendar.drop-vertical.drag-before::before,
+.habit-calendar.drop-vertical.drag-after::after {
+  left: 10%;
+  right: 10%;
+  height: 2px;
+}
+
+.habit-calendar.drop-vertical.drag-before::before {
   top: -0.55rem;
 }
 
-.habit-calendar.drag-after::after {
+.habit-calendar.drop-vertical.drag-after::after {
   bottom: -0.55rem;
 }
 
