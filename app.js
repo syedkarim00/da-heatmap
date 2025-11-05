@@ -660,14 +660,70 @@ function calculateStreak(habitId, uptoIso = state.selectedDate) {
   return streak;
 }
 
-function getCalendarMatrix(anchorDate, view) {
+function getCalendarMatrix(anchorDate, view, habit) {
   const config = getViewConfig(view);
   const anchor = new Date(anchorDate);
-  let dates = [];
 
+  if (view === "year") {
+    const columns = config.columns;
+    const rows = config.rows || Math.ceil(getTotalDaysForView(anchor, view) / columns);
+    const totalCells = rows * columns;
+
+    const buildFallback = () => {
+      const start = startOfYear(anchor);
+      const total = getTotalDaysForView(start, view);
+      const fallbackDates = [];
+      for (let index = 0; index < total; index += 1) {
+        fallbackDates.push(addDays(start, index));
+      }
+      return createCalendarMatrixFromDates(fallbackDates, columns, rows, config.gridSize);
+    };
+
+    if (!habit) {
+      return buildFallback();
+    }
+
+    const selected = parseISO(state.selectedDate);
+    if (!selected || Number.isNaN(selected.getTime())) {
+      return buildFallback();
+    }
+
+    const windowStart = addDays(selected, -364);
+    const allDates = [];
+    let cursor = new Date(windowStart);
+    while (cursor <= selected) {
+      allDates.push(new Date(cursor));
+      cursor = addDays(cursor, 1);
+    }
+
+    const latestIndex = findLatestCompletionIndex(habit, allDates);
+    let startIndex;
+    if (latestIndex !== -1) {
+      startIndex = latestIndex;
+    } else if (allDates.length > totalCells) {
+      startIndex = allDates.length - totalCells;
+    } else {
+      startIndex = 0;
+    }
+
+    const padded = [];
+    for (let i = 0; i < totalCells; i += 1) {
+      const sourceIndex = startIndex + i;
+      if (sourceIndex >= 0 && sourceIndex < allDates.length) {
+        padded.push(allDates[sourceIndex]);
+      } else {
+        padded.push(null);
+      }
+    }
+
+    return createCalendarMatrixFromDates(padded, columns, rows, config.gridSize);
+  }
+
+  const dates = [];
   if (view === "week") {
-    const config = getViewConfig("week");
-    const totalWeeks = config.weeks || Math.max(1, (config.columns || 1) * (config.rows || 1));
+    const weekConfig = getViewConfig("week");
+    const totalWeeks =
+      weekConfig.weeks || Math.max(1, (weekConfig.columns || 1) * (weekConfig.rows || 1));
     const start = new Date(anchor);
     for (let index = 0; index < totalWeeks; index += 1) {
       dates.push(addDays(start, index * 7));
@@ -675,12 +731,6 @@ function getCalendarMatrix(anchorDate, view) {
   } else if (view === "weekDays") {
     const start = startOfWeek(anchor);
     for (let index = 0; index < 7; index += 1) {
-      dates.push(addDays(start, index));
-    }
-  } else if (view === "year") {
-    const start = startOfYear(anchor);
-    const total = getTotalDaysForView(start, view);
-    for (let index = 0; index < total; index += 1) {
       dates.push(addDays(start, index));
     }
   } else {
@@ -693,25 +743,50 @@ function getCalendarMatrix(anchorDate, view) {
     }
   }
 
-  const columns = config.columns;
-  const rows = config.rows || Math.ceil(dates.length / columns);
-  const totalCells = rows * columns;
+  const rows = config.rows || Math.ceil(dates.length / config.columns);
+  return createCalendarMatrixFromDates(dates, config.columns, rows, config.gridSize);
+}
+
+function createCalendarMatrixFromDates(dates, columns, rows, gridSize) {
+  const normalizedColumns = columns || 1;
+  const normalizedRows = rows || Math.ceil(dates.length / normalizedColumns);
+  const totalCells = normalizedRows * normalizedColumns;
   const padded = dates.slice();
   while (padded.length < totalCells) {
     padded.push(null);
   }
 
   const matrix = [];
-  for (let row = 0; row < rows; row += 1) {
-    const startIndex = row * columns;
-    matrix.push(padded.slice(startIndex, startIndex + columns));
+  for (let row = 0; row < normalizedRows; row += 1) {
+    const startIndex = row * normalizedColumns;
+    matrix.push(padded.slice(startIndex, startIndex + normalizedColumns));
   }
 
   return {
     matrix,
-    columns,
-    gridSize: config.gridSize,
+    columns: normalizedColumns,
+    gridSize,
   };
+}
+
+function findLatestCompletionIndex(habit, dates) {
+  if (!habit || !Array.isArray(dates)) {
+    return -1;
+  }
+
+  for (let index = dates.length - 1; index >= 0; index -= 1) {
+    const date = dates[index];
+    if (!date) {
+      continue;
+    }
+    const iso = formatISO(date);
+    const progress = getHabitProgress(iso, habit);
+    if (progress.done > 0) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 function intensityForHabitDay(dateIso, habit) {
@@ -1422,7 +1497,7 @@ function renderCalendar() {
 
     const view = getHabitView(habit);
     const anchor = getViewAnchor(view);
-    const { matrix, columns, gridSize } = getCalendarMatrix(anchor, view);
+    const { matrix, columns, gridSize } = getCalendarMatrix(anchor, view, habit);
     cellsWrapper.style.setProperty("--calendar-columns", columns);
     if (gridSize) {
       cellsWrapper.style.setProperty("--grid-size", gridSize);
