@@ -717,6 +717,11 @@ function calculateStreak(habitId, uptoIso = state.selectedDate) {
 function getCalendarMatrix(anchorDate, view, habit) {
   const config = getViewConfig(view);
   const anchor = new Date(anchorDate);
+  const selectedRaw = parseISO(state.selectedDate);
+  const hasValidSelected = selectedRaw instanceof Date && !Number.isNaN(selectedRaw.getTime());
+  const selected = hasValidSelected
+    ? new Date(selectedRaw.getFullYear(), selectedRaw.getMonth(), selectedRaw.getDate())
+    : null;
 
   if (view === "year") {
     const columns = config.columns;
@@ -733,12 +738,7 @@ function getCalendarMatrix(anchorDate, view, habit) {
       return createCalendarMatrixFromDates(fallbackDates, columns, rows, config.gridSize);
     };
 
-    if (!habit) {
-      return buildFallback();
-    }
-
-    const selected = parseISO(state.selectedDate);
-    if (!selected || Number.isNaN(selected.getTime())) {
+    if (!habit || !hasValidSelected || !selected) {
       return buildFallback();
     }
 
@@ -750,9 +750,9 @@ function getCalendarMatrix(anchorDate, view, habit) {
     );
 
     const minStart = addDays(selected, -(totalCells - 1));
-    let startDate = earliestCompletion ? earliestCompletion : minStart;
-    if (startDate < minStart) {
-      startDate = minStart;
+    let startDate = earliestCompletion ? new Date(earliestCompletion) : new Date(minStart);
+    if (startDate.getTime() < minStart.getTime()) {
+      startDate = new Date(minStart);
     }
 
     const maxWindowEnd = addDays(selected, 364);
@@ -769,31 +769,135 @@ function getCalendarMatrix(anchorDate, view, habit) {
     return createCalendarMatrixFromDates(padded, columns, rows, config.gridSize);
   }
 
-  const dates = [];
   if (view === "week") {
-    const weekConfig = getViewConfig("week");
     const totalWeeks =
-      weekConfig.weeks || Math.max(1, (weekConfig.columns || 1) * (weekConfig.rows || 1));
-    const start = new Date(anchor);
+      config.weeks || Math.max(1, (config.columns || 1) * (config.rows || 1));
+
+    const buildFallback = () => {
+      const fallbackDates = [];
+      for (let index = 0; index < totalWeeks; index += 1) {
+        fallbackDates.push(addDays(new Date(anchor), index * 7));
+      }
+      return createCalendarMatrixFromDates(
+        fallbackDates,
+        config.columns,
+        config.rows,
+        config.gridSize
+      );
+    };
+
+    if (!habit || !hasValidSelected || !selected) {
+      return buildFallback();
+    }
+
+    const selectedWeekStart = startOfWeek(selected);
+    const minStart = addDays(selectedWeekStart, -7 * (totalWeeks - 1));
+    const earliestCompletion = findEarliestCompletionDateInRange(
+      habit,
+      minStart,
+      selected
+    );
+    let startDate = earliestCompletion
+      ? startOfWeek(new Date(earliestCompletion))
+      : new Date(minStart);
+    if (startDate.getTime() < minStart.getTime()) {
+      startDate = new Date(minStart);
+    }
+
+    const maxWindowEnd = addDays(selectedWeekStart, 7 * (totalWeeks - 1));
+    const dates = [];
     for (let index = 0; index < totalWeeks; index += 1) {
-      dates.push(addDays(start, index * 7));
+      const current = addDays(startDate, index * 7);
+      if (current > maxWindowEnd) {
+        dates.push(null);
+      } else {
+        dates.push(new Date(current));
+      }
     }
-  } else if (view === "weekDays") {
-    const start = startOfWeek(anchor);
-    for (let index = 0; index < 7; index += 1) {
-      dates.push(addDays(start, index));
+
+    return createCalendarMatrixFromDates(dates, config.columns, config.rows, config.gridSize);
+  }
+
+  if (view === "weekDays") {
+    const totalDays = (config.rows || 1) * (config.columns || 7);
+
+    const buildFallback = () => {
+      const start = startOfWeek(anchor);
+      const fallbackDates = [];
+      for (let index = 0; index < totalDays; index += 1) {
+        fallbackDates.push(addDays(start, index));
+      }
+      return createCalendarMatrixFromDates(
+        fallbackDates,
+        config.columns,
+        config.rows,
+        config.gridSize
+      );
+    };
+
+    if (!habit || !hasValidSelected || !selected) {
+      return buildFallback();
     }
-  } else {
+
+    const minStart = addDays(selected, -(totalDays - 1));
+    const earliestCompletion = findEarliestCompletionDateInRange(habit, minStart, selected);
+    let startDate = earliestCompletion ? new Date(earliestCompletion) : new Date(minStart);
+    if (startDate.getTime() < minStart.getTime()) {
+      startDate = new Date(minStart);
+    }
+
+    const maxWindowEnd = addDays(selected, totalDays - 1);
+    const dates = [];
+    for (let index = 0; index < totalDays; index += 1) {
+      const current = addDays(startDate, index);
+      if (current > maxWindowEnd) {
+        dates.push(null);
+      } else {
+        dates.push(new Date(current));
+      }
+    }
+
+    return createCalendarMatrixFromDates(dates, config.columns, config.rows, config.gridSize);
+  }
+
+  // Month view fallback
+  const buildMonthFallback = () => {
     const start = startOfMonth(anchor);
     const monthIndex = start.getMonth();
     const year = start.getFullYear();
     const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+    const fallbackDates = [];
     for (let day = 1; day <= daysInMonth; day += 1) {
-      dates.push(new Date(year, monthIndex, day));
+      fallbackDates.push(new Date(year, monthIndex, day));
+    }
+    const rows = config.rows || Math.ceil(fallbackDates.length / (config.columns || 1));
+    return createCalendarMatrixFromDates(fallbackDates, config.columns, rows, config.gridSize);
+  };
+
+  if (!habit || !hasValidSelected || !selected) {
+    return buildMonthFallback();
+  }
+
+  const daysInView = getTotalDaysForView(selected, "month");
+  const minStart = addDays(selected, -(daysInView - 1));
+  const earliestCompletion = findEarliestCompletionDateInRange(habit, minStart, selected);
+  let startDate = earliestCompletion ? new Date(earliestCompletion) : new Date(minStart);
+  if (startDate.getTime() < minStart.getTime()) {
+    startDate = new Date(minStart);
+  }
+
+  const maxWindowEnd = addDays(selected, daysInView - 1);
+  const dates = [];
+  for (let index = 0; index < daysInView; index += 1) {
+    const current = addDays(startDate, index);
+    if (current > maxWindowEnd) {
+      dates.push(null);
+    } else {
+      dates.push(new Date(current));
     }
   }
 
-  const rows = config.rows || Math.ceil(dates.length / config.columns);
+  const rows = config.rows || Math.ceil(dates.length / (config.columns || 1));
   return createCalendarMatrixFromDates(dates, config.columns, rows, config.gridSize);
 }
 
