@@ -696,12 +696,13 @@ function getCalendarMatrix(anchorDate, view, habit) {
       cursor = addDays(cursor, 1);
     }
 
-    const latestIndex = findLatestCompletionIndex(habit, allDates);
+    const earliestIndex = findEarliestCompletionIndex(habit, allDates);
+    const minStartForSelected = Math.max(0, allDates.length - totalCells);
     let startIndex;
-    if (latestIndex !== -1) {
-      startIndex = latestIndex;
+    if (earliestIndex !== -1) {
+      startIndex = Math.max(earliestIndex, minStartForSelected);
     } else if (allDates.length > totalCells) {
-      startIndex = allDates.length - totalCells;
+      startIndex = minStartForSelected;
     } else {
       startIndex = 0;
     }
@@ -775,6 +776,26 @@ function findLatestCompletionIndex(habit, dates) {
   }
 
   for (let index = dates.length - 1; index >= 0; index -= 1) {
+    const date = dates[index];
+    if (!date) {
+      continue;
+    }
+    const iso = formatISO(date);
+    const progress = getHabitProgress(iso, habit);
+    if (progress.done > 0) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function findEarliestCompletionIndex(habit, dates) {
+  if (!habit || !Array.isArray(dates)) {
+    return -1;
+  }
+
+  for (let index = 0; index < dates.length; index += 1) {
     const date = dates[index];
     if (!date) {
       continue;
