@@ -24,6 +24,8 @@ const DEFAULT_SETTINGS = {
   heatmapView: DEFAULT_HEATMAP_VIEW,
 };
 
+const LEGEND_CYCLE_INTERVAL = 2000;
+
 const HEATMAP_VIEWS = {
   weekDays: {
     key: "weekDays",
@@ -70,6 +72,9 @@ const state = {
   lastLoggedHabit: null,
   libraryFilter: "active",
   heatmapSettingsHabit: null,
+  legendColors: [],
+  legendColorIndex: 0,
+  legendAnimationTimer: null,
 };
 
 const elements = {
@@ -858,6 +863,94 @@ function borderForIntensity(color, intensity) {
   return `rgba(${r}, ${g}, ${b}, ${alphaMap[intensity] || 0.35})`;
 }
 
+function uniqueHabitColors(habits) {
+  const seen = new Set();
+  const colors = [];
+  habits.forEach((habit) => {
+    if (!habit) return;
+    const rawColor = typeof habit.color === "string" && habit.color.trim()
+      ? habit.color.trim().toLowerCase()
+      : varFallbackColor();
+    if (!seen.has(rawColor)) {
+      seen.add(rawColor);
+      colors.push(rawColor);
+    }
+  });
+  return colors;
+}
+
+function colorsMatch(a, b) {
+  if (a.length !== b.length) {
+    return false;
+  }
+  return a.every((value, index) => value === b[index]);
+}
+
+function applyLegendColor(color) {
+  const resolved = color || varFallbackColor();
+  document.documentElement.style.setProperty("--active-habit-color", resolved);
+  [1, 2, 3, 4].forEach((level) => {
+    document.documentElement.style.setProperty(
+      `--legend-shade-${level}`,
+      shadeForIntensity(resolved, level)
+    );
+    document.documentElement.style.setProperty(
+      `--legend-border-${level}`,
+      borderForIntensity(resolved, level)
+    );
+  });
+}
+
+function stopLegendAnimation() {
+  if (state.legendAnimationTimer) {
+    clearInterval(state.legendAnimationTimer);
+    state.legendAnimationTimer = null;
+  }
+}
+
+function startLegendAnimation(colors) {
+  stopLegendAnimation();
+  state.legendColors = colors.slice();
+  state.legendColorIndex = 0;
+  applyLegendColor(state.legendColors[0] || varFallbackColor());
+  if (state.legendColors.length > 1) {
+    state.legendAnimationTimer = setInterval(() => {
+      state.legendColorIndex =
+        (state.legendColorIndex + 1) % state.legendColors.length;
+      const nextColor = state.legendColors[state.legendColorIndex];
+      applyLegendColor(nextColor);
+    }, LEGEND_CYCLE_INTERVAL);
+  }
+}
+
+function syncLegendAnimation(habits) {
+  const colors = uniqueHabitColors(habits);
+  if (colors.length === 0) {
+    stopLegendAnimation();
+    state.legendColors = [];
+    state.legendColorIndex = 0;
+    applyLegendColor(varFallbackColor());
+    return;
+  }
+
+  const colorsChanged = !colorsMatch(colors, state.legendColors);
+
+  if (colorsChanged) {
+    startLegendAnimation(colors);
+    return;
+  }
+
+  if (state.legendColorIndex >= colors.length) {
+    state.legendColorIndex = 0;
+  }
+
+  if (colors.length === 1) {
+    stopLegendAnimation();
+  }
+
+  applyLegendColor(colors[state.legendColorIndex] || colors[0]);
+}
+
 function createSubHabitRow(subHabit) {
   const row = document.createElement("li");
   row.className = "subhabit-row";
@@ -1477,6 +1570,7 @@ function renderCalendar() {
   const rows = elements.calendarRows;
   rows.innerHTML = "";
   const active = getActiveHabits();
+  syncLegendAnimation(active);
   if (active.length === 0) {
     const empty = document.createElement("p");
     empty.className = "muted";
@@ -1488,14 +1582,8 @@ function renderCalendar() {
   const today = new Date();
   const todayIso = formatISO(today);
   const selectedIso = state.selectedDate;
-  const selectedHabit =
-    state.data.habits.find((habit) => habit.id === state.selectedHabitId) || active[0];
-  const legendColor = selectedHabit && selectedHabit.color ? selectedHabit.color : varFallbackColor();
-  document.documentElement.style.setProperty("--active-habit-color", legendColor);
-  [1, 2, 3, 4].forEach((level) => {
-    document.documentElement.style.setProperty(`--legend-shade-${level}`, shadeForIntensity(legendColor, level));
-    document.documentElement.style.setProperty(`--legend-border-${level}`, borderForIntensity(legendColor, level));
-  });
+  const selectedDateObj = parseISO(selectedIso);
+  const hasValidSelectedDate = !Number.isNaN(selectedDateObj.getTime());
 
   active.forEach((habit) => {
     const habitBlock = document.createElement("div");
@@ -1552,11 +1640,8 @@ function renderCalendar() {
             cell.style.removeProperty("--cell-color");
             cell.style.removeProperty("--cell-border-color");
           }
-          if (habit.id === state.selectedHabitId) {
-            const selectedDate = parseISO(selectedIso);
-            if (isDateInRange(selectedDate, weekStart, weekEnd)) {
-              cell.classList.add("is-selected");
-            }
+          if (hasValidSelectedDate && isDateInRange(selectedDateObj, weekStart, weekEnd)) {
+            cell.classList.add("is-selected");
           }
           if (weekStart > today) {
             cell.classList.add("is-future");
@@ -1598,7 +1683,7 @@ function renderCalendar() {
             cell.style.removeProperty("--cell-color");
             cell.style.removeProperty("--cell-border-color");
           }
-          if (iso === selectedIso && habit.id === state.selectedHabitId) {
+          if (iso === selectedIso) {
             cell.classList.add("is-selected");
           }
 
@@ -1829,6 +1914,10 @@ elements.resetData.addEventListener("click", () => {
     saveData();
     render();
   }
+});
+
+window.addEventListener("beforeunload", () => {
+  stopLegendAnimation();
 });
 
 render();
