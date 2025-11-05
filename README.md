@@ -13,6 +13,8 @@ A single-page web app for logging multi-checkpoint habits, capturing focus to-do
 - 📚 **Habit library:** Edit colors, manage checkpoints, archive habits without losing history, and browse archived habits from a dedicated tab.
 - 🗑️ **Safe deletion:** Remove habits and their historical data when they no longer serve you.
 - 🎨 **Color-tuned heatmaps:** Each habit row renders with its own shade so completions reflect the color you picked in the library.
+- ↕️ **Drag-to-reorder heatmaps:** Grab the hamburger handle beside each habit name to reshuffle rows whenever priorities change.
+- ✨ **Selectable-day glow:** The chosen day stays in sync across every view, gently fading after 10 seconds until you log again or pick a new date.
 - 🧭 **Daily checkpoint list:** Smash the glowing “Log habit” button to finish the day, or tick sub-habits individually for precision—now with a sidebar calendar to jump between dates.
 
 All information is stored locally in `localStorage`. No accounts or servers are required.
@@ -26,10 +28,11 @@ All information is stored locally in `localStorage`. No accounts or servers are 
 ## Keyboard and mouse tips
 
 - **Click** any sub-habit chip to toggle that checkpoint without affecting the others.
-- **Click** a weekly cell to focus that week; day cells can still be toggled directly.
+- **Click** any heatmap cell to focus that date or week—log completions from the daily checklist or quick search.
 - **Enter** while in the search box toggles the first matching habit for the selected day.
 - **Enter** inside the to-do input quickly adds a new focus task.
 - **Click a habit label** above the heatmap to switch between week, month, and year layouts, then adjust the weekly goal when relevant.
+- **Drag** the hamburger handle next to a habit name to rearrange heatmap rows.
 
 ## Resetting the tracker
 

@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS = {
 };
 
 const LEGEND_CYCLE_INTERVAL = 2000;
+const SELECTION_GLOW_DURATION = 10000;
 
 const HEATMAP_VIEWS = {
   weekDays: {
@@ -75,6 +76,10 @@ const state = {
   legendColors: [],
   legendColorIndex: 0,
   legendAnimationTimer: null,
+  selectionGlowActive: true,
+  selectionGlowTimer: null,
+  draggingHabitId: null,
+  dragHandleActive: null,
 };
 
 const elements = {
@@ -200,6 +205,23 @@ function updateSelectedDate(iso, syncCalendar = true) {
     const selected = parseISO(iso);
     state.selectedCalendarMonth = startOfMonth(selected);
   }
+}
+
+function clearSelectionGlowTimer() {
+  if (state.selectionGlowTimer) {
+    clearTimeout(state.selectionGlowTimer);
+    state.selectionGlowTimer = null;
+  }
+}
+
+function triggerSelectionGlow() {
+  state.selectionGlowActive = true;
+  clearSelectionGlowTimer();
+  state.selectionGlowTimer = setTimeout(() => {
+    state.selectionGlowActive = false;
+    state.selectionGlowTimer = null;
+    render();
+  }, SELECTION_GLOW_DURATION);
 }
 
 function isValidHeatmapView(view) {
@@ -597,6 +619,33 @@ function toggleHabitCompletion(dateIso, habit, complete) {
     state.data.entries[dateIso] = entries;
   }
 
+  saveData();
+}
+
+function reorderHabits(sourceId, targetId, beforeTarget) {
+  if (!sourceId || sourceId === targetId) {
+    return;
+  }
+  const habits = state.data.habits;
+  const fromIndex = habits.findIndex((item) => item.id === sourceId);
+  if (fromIndex === -1) {
+    return;
+  }
+  const [moved] = habits.splice(fromIndex, 1);
+  let toIndex = habits.findIndex((item) => item.id === targetId);
+  if (toIndex === -1) {
+    toIndex = habits.length;
+  }
+  if (!beforeTarget) {
+    toIndex += 1;
+  }
+  if (toIndex < 0) {
+    toIndex = 0;
+  }
+  if (toIndex > habits.length) {
+    toIndex = habits.length;
+  }
+  habits.splice(toIndex, 0, moved);
   saveData();
 }
 
@@ -1133,6 +1182,7 @@ function applyHeatmapSettings(view, weeklyTargetValue) {
   updateViewAnchor(config.key, parseISO(state.selectedDate));
   saveData();
   ensureSelectedDateWithinView();
+  triggerSelectionGlow();
 }
 
 function openHabitForm(habit) {
@@ -1241,10 +1291,14 @@ function renderSelectedDayCalendar() {
     if (iso === selectedIso) {
       cell.classList.add("is-selected");
       cell.setAttribute("aria-current", "date");
+      if (state.selectionGlowActive) {
+        cell.classList.add("has-glow");
+      }
     }
 
     cell.addEventListener("click", () => {
       updateSelectedDate(iso);
+      triggerSelectionGlow();
       render();
     });
 
@@ -1306,6 +1360,7 @@ function renderTodayList() {
       toggleHabitCompletion(state.selectedDate, habit, nextComplete);
       state.selectedHabitId = habit.id;
       state.lastLoggedHabit = { id: habit.id, type: "habit", complete: nextComplete };
+      triggerSelectionGlow();
       render();
     });
 
@@ -1328,6 +1383,7 @@ function renderTodayList() {
           state.selectedHabitId = habit.id;
           toggleSubHabit(state.selectedDate, habit, sub.id);
           state.lastLoggedHabit = { id: habit.id, type: "sub", subId: sub.id, complete: !done };
+          triggerSelectionGlow();
           render();
         });
         subItem.appendChild(toggle);
@@ -1379,6 +1435,7 @@ function renderQuickSearch() {
       state.selectedHabitId = habit.id;
       toggleHabitCompletion(state.selectedDate, habit, !isComplete);
       state.lastLoggedHabit = { id: habit.id, type: "habit", complete: !isComplete };
+      triggerSelectionGlow();
       render();
     });
 
@@ -1588,6 +1645,33 @@ function renderCalendar() {
   active.forEach((habit) => {
     const habitBlock = document.createElement("div");
     habitBlock.className = "habit-calendar";
+    habitBlock.dataset.habitId = habit.id;
+    habitBlock.draggable = true;
+
+    const header = document.createElement("div");
+    header.className = "habit-calendar-header";
+
+    const dragHandle = document.createElement("button");
+    dragHandle.type = "button";
+    dragHandle.className = "habit-drag-handle";
+    dragHandle.innerHTML = "<span aria-hidden=\"true\">&#9776;</span>";
+    dragHandle.setAttribute("aria-label", `Reorder ${habit.name}`);
+    dragHandle.title = "Drag to reorder heatmap";
+    dragHandle.addEventListener("mousedown", () => {
+      state.dragHandleActive = habit.id;
+    });
+    dragHandle.addEventListener("touchstart", () => {
+      state.dragHandleActive = habit.id;
+    });
+    dragHandle.addEventListener("mouseup", () => {
+      state.dragHandleActive = null;
+    });
+    dragHandle.addEventListener("touchend", () => {
+      state.dragHandleActive = null;
+    });
+    dragHandle.addEventListener("touchcancel", () => {
+      state.dragHandleActive = null;
+    });
     const label = document.createElement("button");
     label.className = "habit-pill";
     label.style.setProperty("--habit-color", habit.color || varFallbackColor());
@@ -1598,8 +1682,62 @@ function renderCalendar() {
       openHeatmapSettings(habit);
     });
 
+    header.append(dragHandle, label);
+
     const cellsWrapper = document.createElement("div");
     cellsWrapper.className = "calendar-cells";
+
+    habitBlock.addEventListener("dragstart", (event) => {
+      if (state.dragHandleActive !== habit.id) {
+        event.preventDefault();
+        return;
+      }
+      state.draggingHabitId = habit.id;
+      habitBlock.classList.add("is-dragging");
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", habit.id);
+      }
+    });
+
+    habitBlock.addEventListener("dragend", () => {
+      state.draggingHabitId = null;
+      if (state.dragHandleActive === habit.id) {
+        state.dragHandleActive = null;
+      }
+      habitBlock.classList.remove("is-dragging", "drag-before", "drag-after");
+    });
+
+    habitBlock.addEventListener("dragover", (event) => {
+      const draggingId = state.draggingHabitId;
+      if (!draggingId || draggingId === habit.id) {
+        return;
+      }
+      event.preventDefault();
+      const rect = habitBlock.getBoundingClientRect();
+      const before = event.clientY < rect.top + rect.height / 2;
+      habitBlock.classList.toggle("drag-before", before);
+      habitBlock.classList.toggle("drag-after", !before);
+    });
+
+    habitBlock.addEventListener("dragleave", () => {
+      habitBlock.classList.remove("drag-before", "drag-after");
+    });
+
+    habitBlock.addEventListener("drop", (event) => {
+      const draggingId = state.draggingHabitId;
+      if (!draggingId || draggingId === habit.id) {
+        return;
+      }
+      event.preventDefault();
+      const rect = habitBlock.getBoundingClientRect();
+      const before = event.clientY < rect.top + rect.height / 2;
+      habitBlock.classList.remove("drag-before", "drag-after");
+      state.draggingHabitId = null;
+      state.dragHandleActive = null;
+      reorderHabits(draggingId, habit.id, before);
+      render();
+    });
 
     const view = getHabitView(habit);
     const anchor = getViewAnchor(view);
@@ -1642,6 +1780,9 @@ function renderCalendar() {
           }
           if (hasValidSelectedDate && isDateInRange(selectedDateObj, weekStart, weekEnd)) {
             cell.classList.add("is-selected");
+            if (state.selectionGlowActive) {
+              cell.classList.add("has-glow");
+            }
           }
           if (weekStart > today) {
             cell.classList.add("is-future");
@@ -1660,6 +1801,7 @@ function renderCalendar() {
               ? today
               : weekStart;
             updateSelectedDate(formatISO(focusDate));
+            triggerSelectionGlow();
             render();
           });
         } else {
@@ -1685,19 +1827,21 @@ function renderCalendar() {
           }
           if (iso === selectedIso) {
             cell.classList.add("is-selected");
+            if (state.selectionGlowActive) {
+              cell.classList.add("has-glow");
+            }
           }
 
           const labelText = `${habit.name} on ${dayFormatter.format(date)}: ${progress.done}/${progress.total} checkpoints`;
           cell.setAttribute("aria-label", labelText);
 
           cell.addEventListener("click", () => {
-            updateSelectedDate(iso);
-            state.selectedHabitId = habit.id;
-            if (!cell.classList.contains("is-future")) {
-              const complete = progress.total > 0 && progress.done === progress.total;
-              toggleHabitCompletion(iso, habit, !complete);
-              state.lastLoggedHabit = { id: habit.id, type: "habit", complete: !complete };
+            if (cell.disabled) {
+              return;
             }
+            state.selectedHabitId = habit.id;
+            updateSelectedDate(iso);
+            triggerSelectionGlow();
             render();
           });
         }
@@ -1705,7 +1849,7 @@ function renderCalendar() {
       });
     });
 
-    habitBlock.append(label, cellsWrapper);
+    habitBlock.append(header, cellsWrapper);
     rows.appendChild(habitBlock);
   });
 }
@@ -1766,6 +1910,7 @@ elements.habitSearch.addEventListener("keydown", (event) => {
       const isComplete = progress.total > 0 && progress.done === progress.total;
       toggleHabitCompletion(state.selectedDate, habit, !isComplete);
       state.lastLoggedHabit = { id: habit.id, type: "habit", complete: !isComplete };
+      triggerSelectionGlow();
       render();
     }
   }
@@ -1912,12 +2057,27 @@ elements.resetData.addEventListener("click", () => {
     state.libraryFilter = "active";
     state.heatmapSettingsHabit = null;
     saveData();
+    triggerSelectionGlow();
     render();
   }
 });
 
-window.addEventListener("beforeunload", () => {
-  stopLegendAnimation();
+window.addEventListener("mouseup", () => {
+  state.dragHandleActive = null;
 });
 
+window.addEventListener("touchend", () => {
+  state.dragHandleActive = null;
+});
+
+window.addEventListener("touchcancel", () => {
+  state.dragHandleActive = null;
+});
+
+window.addEventListener("beforeunload", () => {
+  stopLegendAnimation();
+  clearSelectionGlowTimer();
+});
+
+triggerSelectionGlow();
 render();
