@@ -689,31 +689,26 @@ function getCalendarMatrix(anchorDate, view, habit) {
     }
 
     const windowStart = addDays(selected, -364);
-    const allDates = [];
-    let cursor = new Date(windowStart);
-    while (cursor <= selected) {
-      allDates.push(new Date(cursor));
-      cursor = addDays(cursor, 1);
+    const earliestCompletion = findEarliestCompletionDateInRange(
+      habit,
+      windowStart,
+      selected
+    );
+
+    const minStart = addDays(selected, -(totalCells - 1));
+    let startDate = earliestCompletion ? earliestCompletion : minStart;
+    if (startDate < minStart) {
+      startDate = minStart;
     }
 
-    const earliestIndex = findEarliestCompletionIndex(habit, allDates);
-    const minStartForSelected = Math.max(0, allDates.length - totalCells);
-    let startIndex;
-    if (earliestIndex !== -1) {
-      startIndex = Math.max(earliestIndex, minStartForSelected);
-    } else if (allDates.length > totalCells) {
-      startIndex = minStartForSelected;
-    } else {
-      startIndex = 0;
-    }
-
+    const maxWindowEnd = addDays(selected, 364);
     const padded = [];
     for (let i = 0; i < totalCells; i += 1) {
-      const sourceIndex = startIndex + i;
-      if (sourceIndex >= 0 && sourceIndex < allDates.length) {
-        padded.push(allDates[sourceIndex]);
-      } else {
+      const current = addDays(startDate, i);
+      if (current > maxWindowEnd) {
         padded.push(null);
+      } else {
+        padded.push(new Date(current));
       }
     }
 
@@ -790,24 +785,26 @@ function findLatestCompletionIndex(habit, dates) {
   return -1;
 }
 
-function findEarliestCompletionIndex(habit, dates) {
-  if (!habit || !Array.isArray(dates)) {
-    return -1;
+function findEarliestCompletionDateInRange(habit, startDate, endDate) {
+  if (!habit || !startDate || !endDate) {
+    return null;
   }
 
-  for (let index = 0; index < dates.length; index += 1) {
-    const date = dates[index];
-    if (!date) {
-      continue;
-    }
-    const iso = formatISO(date);
+  const cursor = new Date(startDate);
+  cursor.setHours(0, 0, 0, 0);
+  const boundary = new Date(endDate);
+  boundary.setHours(0, 0, 0, 0);
+
+  while (cursor <= boundary) {
+    const iso = formatISO(cursor);
     const progress = getHabitProgress(iso, habit);
     if (progress.done > 0) {
-      return index;
+      return new Date(cursor);
     }
+    cursor.setDate(cursor.getDate() + 1);
   }
 
-  return -1;
+  return null;
 }
 
 function intensityForHabitDay(dateIso, habit) {
