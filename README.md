@@ -4,7 +4,7 @@ A single-page web app for logging multi-checkpoint habits, capturing focus to-do
 
 ## Highlights
 
-- 🔐 **Account-based access:** Create an account locally, sign in anywhere, and the app restores your habits, entries, and focus to-dos.
+- 🔐 **Supabase-backed accounts:** Configure your Supabase project once and sign in on any device to load the same habits, entries, and focus to-dos.
 - ☁️ **Optional Supabase sync:** Drop in your Supabase URL/key to keep data in sync across devices while retaining the offline-only default.
 - 🗓️ **Per-habit heatmaps:** Dense GitHub-style grids that flex per habit—weekly rows summarize a whole week while month and year layouts track individual days.
 - 🔁 **Customizable range:** Tap a habit label to pick a 7-day week, weekly goal grid, month, or year and the calendar instantly reflows with the right column count and cell size.
@@ -19,26 +19,34 @@ A single-page web app for logging multi-checkpoint habits, capturing focus to-do
 - ✨ **Selectable-day glow:** The chosen day stays in sync across every view, gently fading after 10 seconds until you log again or pick a new date.
 - 🧭 **Daily checkpoint list:** Smash the glowing “Log habit” button to finish the day, or tick sub-habits individually for precision—now with a sidebar calendar to jump between dates.
 
-All information lives per-account in your browser. You can stay 100% local (default) or opt into Supabase sync to mirror the same tracker across devices.
+All information lives per-account in your browser. Provide Supabase credentials to back everything up online and use the same tracker everywhere.
 
 ## Getting started
 
 1. Clone or download this repository.
 2. Open `index.html` in a modern browser. (For the best experience, serve it via a simple static server.)
-3. Create an account from the landing screen (or sign back in) to load your tracker.
-4. Build habits from the library panel and start logging checkpoints from the daily list.
+3. From the landing screen, choose **Configure cloud sync** and enter your Supabase project URL and key so accounts can sign in from any device. (Skip this step if you prefer to stay fully offline.)
+4. Create an account or sign back in to load your tracker.
+5. Build habits from the library panel and start logging checkpoints from the daily list.
 
-## Cloud sync (optional)
+## Cloud setup
 
 The tracker runs entirely offline, but you can enable Supabase syncing to mirror progress across devices:
 
 1. Create a Supabase project and enable the REST API.
-2. Add a table (default name: `tracker_profiles`) with columns:
+2. Add an **accounts table** (default name: `tracker_accounts`) with columns:
+   - `email` (text, primary key)
+   - `password_hash` (text)
+   - `sync_settings` (jsonb)
+   - `created_at` (timestamp with time zone, default `now()`)
+   - `updated_at` (timestamp with time zone, default `now()`)
+3. Add a **profiles table** (default name: `tracker_profiles`) with columns:
    - `user_id` (text, primary key)
    - `data` (jsonb)
    - `updated_at` (timestamp with time zone, default `now()`)
-3. Configure Row Level Security so the anon/service role key can read and upsert only the matching `user_id`.
-4. Open **Sync settings** in the app header, paste your Supabase URL, key, and table, then enable cloud sync.
+4. Configure Row Level Security so the anon/service role key can read and upsert only the matching user record in each table.
+5. From the landing screen (or the account toolbar), open **Cloud setup** and paste your Supabase URL, key, and table names.
+6. After signing in, open **Sync settings** if you want to adjust per-account preferences or switch back to local-only mode.
 
 Credentials are stored locally per account. If syncing fails, the app falls back to local data until the connection succeeds.
 

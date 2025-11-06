@@ -1,14 +1,23 @@
 const STORAGE_KEY = "habit-tracker-data-v2";
 const LEGACY_STORAGE_KEYS = ["lod-tracker-data-v2"];
 const ACCOUNT_STORAGE_KEY = "habit-tracker-accounts";
+const CLOUD_SETTINGS_KEY = "habit-tracker-cloud-settings";
 const SESSION_STORAGE_KEY = "habit-tracker-session";
 const DEFAULT_SYNC_SETTINGS = {
-  enabled: true,
-  provider: "supabase",
+  enabled: false,
+  provider: "local",
   supabase: {
-    url: "https://peuiedofnbmjodoeiknk.supabase.co",
-    anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBldWllZG9mbmJtam9kb2Vpa25rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIzOTE3OTUsImV4cCI6MjA3Nzk2Nzc5NX0.-lcNxCD7ceVnSfIp49_TF2iMKLpsyfbQssv774Eh72w",
+    url: "",
+    anonKey: "",
     table: "tracker_profiles",
+  },
+};
+const DEFAULT_CLOUD_SETTINGS = {
+  supabase: {
+    url: "",
+    anonKey: "",
+    accountsTable: "tracker_accounts",
+    dataTable: "tracker_profiles",
   },
 };
 
@@ -125,6 +134,7 @@ const today = new Date();
 const initialSelectedDate = formatISO(today);
 const state = {
   accountStore: loadAccountStore(),
+  cloudSettings: loadCloudSettings(),
   currentUserId: null,
   isAuthenticated: false,
   authMode: "signIn",
@@ -154,6 +164,11 @@ const state = {
     inFlight: null,
   },
 };
+
+Object.values(state.accountStore.users).forEach((account) => {
+  account.sync = normalizeSyncSettings(account.sync);
+});
+saveAccountStore(state.accountStore);
 
 const elements = {
   appShell: document.getElementById("appShell"),
@@ -218,7 +233,66 @@ const elements = {
   heatmapSettingsTitle: document.getElementById("heatmapSettingsTitle"),
   heatmapWeeklyTargetRow: document.getElementById("heatmapWeeklyTargetRow"),
   heatmapWeeklyTarget: document.getElementById("heatmapWeeklyTarget"),
+  openCloudSettings: document.getElementById("openCloudSettings"),
+  headerCloudSettings: document.getElementById("headerCloudSettings"),
+  cloudSettingsDialog: document.getElementById("cloudSettingsDialog"),
+  cloudSettingsForm: document.getElementById("cloudSettingsForm"),
+  cloudSettingsCancel: document.getElementById("cloudSettingsCancel"),
+  cloudSettingsError: document.getElementById("cloudSettingsError"),
+  cloudSupabaseUrl: document.getElementById("cloudSupabaseUrl"),
+  cloudSupabaseAnonKey: document.getElementById("cloudSupabaseAnonKey"),
+  cloudSupabaseAccountsTable: document.getElementById("cloudSupabaseAccountsTable"),
+  cloudSupabaseDataTable: document.getElementById("cloudSupabaseDataTable"),
 };
+
+function cloneCloudSettings() {
+  return {
+    supabase: { ...DEFAULT_CLOUD_SETTINGS.supabase },
+  };
+}
+
+function normalizeCloudSettings(settings) {
+  const base = cloneCloudSettings();
+  if (!settings || typeof settings !== "object") {
+    return base;
+  }
+  const supabase = settings.supabase && typeof settings.supabase === "object" ? settings.supabase : {};
+  base.supabase = {
+    url: typeof supabase.url === "string" ? supabase.url.trim() : "",
+    anonKey: typeof supabase.anonKey === "string" ? supabase.anonKey.trim() : "",
+    accountsTable:
+      typeof supabase.accountsTable === "string" && supabase.accountsTable.trim() !== ""
+        ? supabase.accountsTable.trim()
+        : DEFAULT_CLOUD_SETTINGS.supabase.accountsTable,
+    dataTable:
+      typeof supabase.dataTable === "string" && supabase.dataTable.trim() !== ""
+        ? supabase.dataTable.trim()
+        : DEFAULT_CLOUD_SETTINGS.supabase.dataTable,
+  };
+  return base;
+}
+
+function loadCloudSettings() {
+  try {
+    const stored = localStorage.getItem(CLOUD_SETTINGS_KEY);
+    if (!stored) {
+      return cloneCloudSettings();
+    }
+    const parsed = JSON.parse(stored);
+    return normalizeCloudSettings(parsed);
+  } catch (error) {
+    console.warn("Failed to parse cloud settings", error);
+    return cloneCloudSettings();
+  }
+}
+
+function saveCloudSettings(settings) {
+  try {
+    localStorage.setItem(CLOUD_SETTINGS_KEY, JSON.stringify(normalizeCloudSettings(settings)));
+  } catch (error) {
+    console.warn("Failed to persist cloud settings", error);
+  }
+}
 
 function cloneDefaultSyncSettings() {
   return {
@@ -226,6 +300,30 @@ function cloneDefaultSyncSettings() {
     provider: DEFAULT_SYNC_SETTINGS.provider,
     supabase: { ...DEFAULT_SYNC_SETTINGS.supabase },
   };
+}
+
+function deriveAccountSyncSettings() {
+  const supabase = state.cloudSettings && state.cloudSettings.supabase ? state.cloudSettings.supabase : null;
+  if (!supabase || !supabase.url || !supabase.anonKey || !supabase.dataTable) {
+    return cloneDefaultSyncSettings();
+  }
+  return normalizeSyncSettings({
+    enabled: true,
+    provider: "supabase",
+    supabase: {
+      url: supabase.url,
+      anonKey: supabase.anonKey,
+      table: supabase.dataTable || DEFAULT_SYNC_SETTINGS.supabase.table,
+    },
+  });
+}
+
+function isSupabaseConfigured(settings = state.cloudSettings) {
+  if (!settings || !settings.supabase) {
+    return false;
+  }
+  const supabase = settings.supabase;
+  return Boolean(supabase.url && supabase.anonKey && supabase.accountsTable && supabase.dataTable);
 }
 
 function normalizeSyncSettings(sync) {
@@ -528,12 +626,24 @@ function setAuthMode(mode) {
   if (elements.showSignIn) {
     elements.showSignIn.classList.toggle("is-hidden", !isRegister);
   }
-  if (elements.authSubtitle) {
-    elements.authSubtitle.textContent = isRegister
-      ? "Create an account to start tracking."
-      : "Sign in to access your habits on any device.";
-  }
+  updateAuthSubtitle();
   clearAuthError();
+}
+
+function updateAuthSubtitle() {
+  if (!elements.authSubtitle) {
+    return;
+  }
+  const isRegister = state.authMode === "register";
+  if (isSupabaseConfigured()) {
+    elements.authSubtitle.textContent = isRegister
+      ? "Create an account to start tracking everywhere."
+      : "Sign in to access your habits on any device.";
+    return;
+  }
+  elements.authSubtitle.textContent = isRegister
+    ? "Create an account to start tracking locally."
+    : "Sign in (set up cloud sync to use multiple devices).";
 }
 
 function setAuthError(message) {
@@ -549,6 +659,92 @@ function clearAuthError() {
   if (elements.syncSettingsError) {
     elements.syncSettingsError.textContent = "";
   }
+  if (elements.cloudSettingsError) {
+    elements.cloudSettingsError.textContent = "";
+  }
+}
+
+function populateCloudSettingsForm() {
+  const settings = normalizeCloudSettings(state.cloudSettings);
+  if (elements.cloudSupabaseUrl) {
+    elements.cloudSupabaseUrl.value = settings.supabase.url || "";
+  }
+  if (elements.cloudSupabaseAnonKey) {
+    elements.cloudSupabaseAnonKey.value = settings.supabase.anonKey || "";
+  }
+  if (elements.cloudSupabaseAccountsTable) {
+    elements.cloudSupabaseAccountsTable.value = settings.supabase.accountsTable || DEFAULT_CLOUD_SETTINGS.supabase.accountsTable;
+  }
+  if (elements.cloudSupabaseDataTable) {
+    elements.cloudSupabaseDataTable.value = settings.supabase.dataTable || DEFAULT_CLOUD_SETTINGS.supabase.dataTable;
+  }
+  if (elements.cloudSettingsError) {
+    elements.cloudSettingsError.textContent = "";
+  }
+}
+
+function openCloudSettingsDialog() {
+  if (!elements.cloudSettingsDialog) {
+    return;
+  }
+  populateCloudSettingsForm();
+  elements.cloudSettingsDialog.showModal();
+}
+
+function closeCloudSettingsDialog() {
+  if (!elements.cloudSettingsDialog) {
+    return;
+  }
+  elements.cloudSettingsDialog.close();
+  if (elements.cloudSettingsError) {
+    elements.cloudSettingsError.textContent = "";
+  }
+}
+
+function handleCloudSettingsSubmit(event) {
+  event.preventDefault();
+  const nextSettings = normalizeCloudSettings({
+    supabase: {
+      url: elements.cloudSupabaseUrl ? elements.cloudSupabaseUrl.value : "",
+      anonKey: elements.cloudSupabaseAnonKey ? elements.cloudSupabaseAnonKey.value : "",
+      accountsTable: elements.cloudSupabaseAccountsTable ? elements.cloudSupabaseAccountsTable.value : DEFAULT_CLOUD_SETTINGS.supabase.accountsTable,
+      dataTable: elements.cloudSupabaseDataTable ? elements.cloudSupabaseDataTable.value : DEFAULT_CLOUD_SETTINGS.supabase.dataTable,
+    },
+  });
+  const hasUrl = Boolean(nextSettings.supabase.url);
+  const hasKey = Boolean(nextSettings.supabase.anonKey);
+  if (hasUrl !== hasKey) {
+    if (elements.cloudSettingsError) {
+      elements.cloudSettingsError.textContent = "Provide both the Supabase URL and key to enable cloud sync, or leave both blank to stay offline.";
+    }
+    return;
+  }
+  state.cloudSettings = nextSettings;
+  saveCloudSettings(nextSettings);
+  updateAuthSubtitle();
+  if (state.isAuthenticated) {
+    const account = getCurrentAccountRecord();
+    if (account) {
+      account.sync = deriveAccountSyncSettings();
+      saveAccountStore(state.accountStore);
+      updateSyncStatus();
+      if (isSupabaseConfigured()) {
+        upsertRemoteAccount(account).catch((error) => {
+          console.warn("Failed to update remote account after cloud settings change", error);
+        });
+      }
+      if (isSyncEnabled(account)) {
+        performSync({ forcePush: true })
+          .then(() => {
+            render();
+          })
+          .catch((error) => {
+            console.warn("Failed to sync after cloud settings update", error);
+          });
+      }
+    }
+  }
+  closeCloudSettingsDialog();
 }
 
 function showAuthGate() {
@@ -655,6 +851,122 @@ function sanitizeSupabaseUrl(url) {
   }
   return url.endsWith("/") ? url.slice(0, -1) : url;
 }
+
+function getSupabaseAccountConfig() {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+  return state.cloudSettings.supabase;
+}
+
+function createSupabaseHeaders(anonKey) {
+  return {
+    apikey: anonKey,
+    Authorization: `Bearer ${anonKey}`,
+    Accept: "application/json",
+  };
+}
+
+async function fetchRemoteAccount(email) {
+  const supabase = getSupabaseAccountConfig();
+  if (!supabase) {
+    return null;
+  }
+  const baseUrl = sanitizeSupabaseUrl(supabase.url);
+  const target = `${baseUrl}/rest/v1/${supabase.accountsTable}?select=email,password_hash,sync_settings,created_at,updated_at&email=eq.${encodeURIComponent(
+    email
+  )}`;
+  const response = await fetch(target, {
+    headers: createSupabaseHeaders(supabase.anonKey),
+  });
+  if (!response.ok) {
+    if (response.status === 404) {
+      return null;
+    }
+    const message = await response.text();
+    throw new Error(message || `Supabase error ${response.status}`);
+  }
+  const payload = await response.json();
+  if (!Array.isArray(payload) || payload.length === 0) {
+    return null;
+  }
+  const record = payload[0];
+  let syncPayload = {};
+  if (record.sync_settings) {
+    if (typeof record.sync_settings === "string") {
+      try {
+        syncPayload = JSON.parse(record.sync_settings);
+      } catch (error) {
+        console.warn("Failed to parse remote sync settings", error);
+        syncPayload = {};
+      }
+    } else if (typeof record.sync_settings === "object") {
+      syncPayload = record.sync_settings;
+    }
+  }
+  const normalizedEmail = normalizeEmail(record.email || email);
+  const syncSettings = normalizeSyncSettings({
+    enabled: true,
+    provider: "supabase",
+    supabase: {
+      url:
+        syncPayload.supabase && syncPayload.supabase.url
+          ? syncPayload.supabase.url
+          : supabase.url,
+      anonKey:
+        syncPayload.supabase && syncPayload.supabase.anonKey
+          ? syncPayload.supabase.anonKey
+          : supabase.anonKey,
+      table:
+        syncPayload.supabase && syncPayload.supabase.table
+          ? syncPayload.supabase.table
+          : supabase.dataTable || DEFAULT_SYNC_SETTINGS.supabase.table,
+    },
+  });
+  return {
+    id: normalizedEmail,
+    email: record.email || normalizedEmail,
+    passwordHash: record.password_hash || "",
+    createdAt: record.created_at || null,
+    lastLoginAt: record.updated_at || null,
+    sync: syncSettings,
+  };
+}
+
+async function upsertRemoteAccount(account) {
+  const supabase = getSupabaseAccountConfig();
+  if (!supabase) {
+    return;
+  }
+  const baseUrl = sanitizeSupabaseUrl(supabase.url);
+  const target = `${baseUrl}/rest/v1/${supabase.accountsTable}`;
+  const payload = {
+    email: account.id,
+    password_hash: account.passwordHash,
+    sync_settings: {
+      enabled: account.sync.enabled,
+      provider: account.sync.provider,
+      supabase: account.sync.supabase,
+    },
+  };
+  if (account.createdAt) {
+    payload.created_at = account.createdAt;
+  }
+  const response = await fetch(target, {
+    method: "POST",
+    headers: {
+      ...createSupabaseHeaders(supabase.anonKey),
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Supabase error ${response.status}`);
+  }
+}
+
 
 function validateSupabaseConfig(config) {
   if (!config || config.provider !== "supabase" || !config.enabled) {
@@ -917,9 +1229,28 @@ async function handleSignIn(event) {
     setAuthError("Email and password are required.");
     return;
   }
-  const account = state.accountStore.users[email];
+  let account = state.accountStore.users[email];
+  let remoteError = null;
+  if (isSupabaseConfigured()) {
+    try {
+      const remoteAccount = await fetchRemoteAccount(email);
+      if (remoteAccount) {
+        remoteAccount.sync = normalizeSyncSettings(remoteAccount.sync);
+        state.accountStore.users[email] = remoteAccount;
+        saveAccountStore(state.accountStore);
+        account = remoteAccount;
+      }
+    } catch (error) {
+      console.warn("Failed to load remote account", error);
+      remoteError = error;
+    }
+  }
   if (!account) {
-    setAuthError("Account not found.");
+    if (remoteError) {
+      setAuthError(`Unable to reach cloud account store: ${remoteError.message || String(remoteError)}`);
+    } else {
+      setAuthError("Account not found.");
+    }
     return;
   }
   const hash = await hashPassword(password);
@@ -927,7 +1258,15 @@ async function handleSignIn(event) {
     setAuthError("Incorrect password.");
     return;
   }
+  account.sync = normalizeSyncSettings(account.sync);
+  state.accountStore.users[email] = account;
+  saveAccountStore(state.accountStore);
   await completeSignIn(email);
+  if (isSupabaseConfigured()) {
+    upsertRemoteAccount(account).catch((error) => {
+      console.warn("Failed to update remote account", error);
+    });
+  }
   if (elements.signInForm) {
     elements.signInForm.reset();
   }
@@ -960,16 +1299,29 @@ async function handleRegister(event) {
     return;
   }
   const passwordHash = await hashPassword(password);
-  state.accountStore.users[email] = {
+  const syncSettings = deriveAccountSyncSettings();
+  const record = {
     id: email,
     email: emailRaw.trim() || email,
     passwordHash,
     createdAt: new Date().toISOString(),
     lastLoginAt: null,
-    sync: cloneDefaultSyncSettings(),
+    sync: syncSettings,
   };
+  state.accountStore.users[email] = record;
   saveAccountStore(state.accountStore);
-  await completeSignIn(email, { skipSync: true });
+  if (isSupabaseConfigured()) {
+    try {
+      await upsertRemoteAccount(record);
+    } catch (error) {
+      console.warn("Failed to persist remote account", error);
+      delete state.accountStore.users[email];
+      saveAccountStore(state.accountStore);
+      setAuthError(`Unable to create cloud account: ${error.message || String(error)}`);
+      return;
+    }
+  }
+  await completeSignIn(email, { skipSync: !isSyncEnabled(record) });
   if (elements.registerForm) {
     elements.registerForm.reset();
   }
@@ -1014,6 +1366,11 @@ function handleSyncSettingsSubmit(event) {
   }
   updateAccountBar();
   updateSyncStatus();
+  if (isSupabaseConfigured()) {
+    upsertRemoteAccount(account).catch((error) => {
+      console.warn("Failed to update remote account from sync settings", error);
+    });
+  }
   if (isSyncEnabled(account)) {
     performSync({ forcePush: true })
       .then(() => {
@@ -3002,6 +3359,14 @@ if (elements.signOut) {
   elements.signOut.addEventListener("click", handleSignOut);
 }
 
+if (elements.openCloudSettings) {
+  elements.openCloudSettings.addEventListener("click", openCloudSettingsDialog);
+}
+
+if (elements.headerCloudSettings) {
+  elements.headerCloudSettings.addEventListener("click", openCloudSettingsDialog);
+}
+
 if (elements.openAccountSettings) {
   elements.openAccountSettings.addEventListener("click", () => {
     populateSyncSettings();
@@ -3029,6 +3394,22 @@ if (elements.accountSettingsDialog) {
 
 if (elements.accountSettingsForm) {
   elements.accountSettingsForm.addEventListener("submit", handleSyncSettingsSubmit);
+}
+
+if (elements.cloudSettingsForm) {
+  elements.cloudSettingsForm.addEventListener("submit", handleCloudSettingsSubmit);
+}
+
+if (elements.cloudSettingsCancel) {
+  elements.cloudSettingsCancel.addEventListener("click", closeCloudSettingsDialog);
+}
+
+if (elements.cloudSettingsDialog) {
+  elements.cloudSettingsDialog.addEventListener("close", () => {
+    if (elements.cloudSettingsError) {
+      elements.cloudSettingsError.textContent = "";
+    }
+  });
 }
 
 if (elements.syncProvider) {

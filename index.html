@@ -71,6 +71,7 @@
           <button type="submit" class="primary">Create account</button>
         </form>
         <p id="authError" class="auth-error" role="status"></p>
+        <button id="openCloudSettings" type="button" class="link-button">Configure cloud sync</button>
         <p class="auth-switch">
           <button id="showRegister" type="button">Need an account?</button>
           <button id="showSignIn" type="button" class="is-hidden">Have an account?</button>
@@ -85,6 +86,7 @@
           <span id="syncStatus" class="sync-status muted small"></span>
         </div>
         <div class="account-actions">
+          <button id="headerCloudSettings" type="button" class="ghost small">Cloud setup</button>
           <button id="syncNow" type="button" class="ghost small">Sync now</button>
           <button id="openAccountSettings" type="button" class="ghost small">
             Sync settings
@@ -305,6 +307,42 @@
         <footer class="modal-actions">
           <button type="button" id="heatmapSettingsCancel" class="ghost">Cancel</button>
           <button type="submit" class="primary">Apply</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="cloudSettingsDialog" class="modal">
+      <form id="cloudSettingsForm" method="dialog" class="modal-content">
+        <header>
+          <h2>Cloud configuration</h2>
+          <p class="muted small">
+            Provide your Supabase project details so accounts and data stay in sync across devices.
+          </p>
+        </header>
+        <label>
+          Supabase URL
+          <input type="url" id="cloudSupabaseUrl" placeholder="https://your-project.supabase.co" />
+        </label>
+        <label>
+          Service role key or anon key
+          <input type="text" id="cloudSupabaseAnonKey" placeholder="supabase service role or anon key" />
+        </label>
+        <label>
+          Accounts table
+          <input type="text" id="cloudSupabaseAccountsTable" placeholder="tracker_accounts" />
+        </label>
+        <label>
+          Data table
+          <input type="text" id="cloudSupabaseDataTable" placeholder="tracker_profiles" />
+        </label>
+        <p class="muted small">
+          The accounts table must include <code>email</code> (text, primary key), <code>password_hash</code> (text), and
+          <code>sync_settings</code> (jsonb).
+        </p>
+        <p id="cloudSettingsError" class="auth-error" role="status"></p>
+        <footer class="modal-actions">
+          <button type="button" id="cloudSettingsCancel" class="ghost">Cancel</button>
+          <button type="submit" class="primary">Save</button>
         </footer>
       </form>
     </dialog>
