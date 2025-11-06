@@ -27,6 +27,53 @@ const DEFAULT_SETTINGS = {
 const LEGEND_CYCLE_INTERVAL = 2000;
 const SELECTION_GLOW_DURATION = 10000;
 
+const MOVE_ICON_SVG = `
+  <svg class="icon icon-move" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path
+      fill="currentColor"
+      d="M12 2.25l3 3H12.75V9h3.75V6.75l3 3-3 3V10.5h-3.75v3.75H15l-3 3-3-3h2.25V10.5H7.5V12.75l-3-3 3-3V9h3.75V5.25H9l3-3z"
+    />
+  </svg>
+`;
+
+const EYE_OPEN_ICON = `
+  <svg class="icon icon-eye" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.5"
+      d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"
+    ></path>
+    <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
+  </svg>
+`;
+
+const EYE_CLOSED_ICON = `
+  <svg class="icon icon-eye-off" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.5"
+      d="M3 8c2.4-3.2 5.7-4.75 9-4.75S18.6 4.8 21 8"
+    ></path>
+    <path
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.5"
+      d="M3 16c2.4 3.2 5.7 4.75 9 4.75s6.6-1.55 9-4.75"
+    ></path>
+    <line
+      x1="4"
+      y1="4"
+      x2="20"
+      y2="20"
+      stroke="currentColor"
+      stroke-width="1.5"
+      stroke-linecap="round"
+    ></line>
+  </svg>
+`;
+
 const HEATMAP_VIEWS = {
   weekDays: {
     key: "weekDays",
@@ -1785,7 +1832,7 @@ function renderCalendar() {
     const dragHandle = document.createElement("button");
     dragHandle.type = "button";
     dragHandle.className = "habit-drag-handle";
-    dragHandle.innerHTML = "<span aria-hidden=\"true\">&#9776;</span>";
+    dragHandle.innerHTML = MOVE_ICON_SVG;
     dragHandle.setAttribute("aria-label", `Reorder ${habit.name}`);
     dragHandle.title = "Drag to reorder heatmap";
     dragHandle.addEventListener("mousedown", () => {
@@ -1813,7 +1860,29 @@ function renderCalendar() {
       openHeatmapSettings(habit);
     });
 
-    header.append(dragHandle, label);
+    const futureToggle = document.createElement("button");
+    futureToggle.type = "button";
+    futureToggle.className = "habit-visibility-toggle";
+    futureToggle.classList.toggle("is-active", hideFutureCells);
+    futureToggle.setAttribute(
+      "aria-label",
+      hideFutureCells
+        ? `Show future days for ${habit.name}`
+        : `Hide future days for ${habit.name}`
+    );
+    futureToggle.setAttribute(
+      "aria-pressed",
+      hideFutureCells ? "true" : "false"
+    );
+    futureToggle.title = hideFutureCells ? "Show future days" : "Hide future days";
+    futureToggle.innerHTML = hideFutureCells ? EYE_CLOSED_ICON : EYE_OPEN_ICON;
+    futureToggle.addEventListener("click", () => {
+      habit.hideFuture = !Boolean(habit.hideFuture);
+      saveData();
+      render();
+    });
+
+    header.append(dragHandle, label, futureToggle);
 
     const cellsWrapper = document.createElement("div");
     cellsWrapper.className = "calendar-cells";
@@ -2038,33 +2107,7 @@ function renderCalendar() {
       });
     });
 
-    const footer = document.createElement("div");
-    footer.className = "habit-calendar-footer";
-
-    const futureToggle = document.createElement("button");
-    futureToggle.type = "button";
-    futureToggle.className = "future-toggle";
-    futureToggle.classList.toggle("is-active", hideFutureCells);
-    futureToggle.setAttribute("aria-pressed", hideFutureCells ? "true" : "false");
-    futureToggle.setAttribute(
-      "aria-label",
-      hideFutureCells
-        ? `Show future days for ${habit.name}`
-        : `Hide future days for ${habit.name}`
-    );
-    futureToggle.title = hideFutureCells ? "Show future days" : "Hide future days";
-    futureToggle.innerHTML = `<span aria-hidden="true">${
-      hideFutureCells ? "👁‍🗨" : "👁"
-    }</span>`;
-    futureToggle.addEventListener("click", () => {
-      habit.hideFuture = !Boolean(habit.hideFuture);
-      saveData();
-      render();
-    });
-
-    footer.appendChild(futureToggle);
-
-    habitBlock.append(header, cellsWrapper, footer);
+    habitBlock.append(header, cellsWrapper);
     if (currentRow) {
       currentRow.appendChild(habitBlock);
     }

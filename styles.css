@@ -77,6 +77,12 @@ button:disabled {
   opacity: 0.5;
 }
 
+.icon {
+  display: block;
+  width: 1em;
+  height: 1em;
+}
+
 .app-shell {
   min-height: 100vh;
   display: flex;
@@ -659,6 +665,7 @@ button.ghost:hover {
   width: 100%;
 }
 
+
 .habit-calendar {
   display: flex;
   flex-direction: column;
@@ -670,56 +677,49 @@ button.ghost:hover {
   max-width: 100%;
 }
 
-.habit-calendar-footer {
-  align-self: stretch;
-  width: 100%;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.future-toggle {
-  width: 2.1rem;
-  height: 2.1rem;
-  border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background: rgba(15, 23, 42, 0.55);
-  color: rgba(226, 232, 240, 0.75);
-  display: grid;
-  place-items: center;
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease,
-    transform 0.2s ease;
-  margin-left: auto;
-  cursor: pointer;
-}
-
-.future-toggle span {
-  font-size: 1.1rem;
-  line-height: 1;
-}
-
-.future-toggle:hover {
-  transform: translateY(-1px);
-  background: rgba(148, 163, 184, 0.2);
-  border-color: rgba(148, 163, 184, 0.45);
-  color: var(--text-primary);
-}
-
-.future-toggle.is-active {
-  background: rgba(56, 189, 248, 0.2);
-  border-color: rgba(56, 189, 248, 0.55);
-  color: var(--text-primary);
-}
-
-.future-toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
 .habit-calendar-header {
-  display: flex;
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto max-content auto;
   align-items: center;
   justify-content: center;
-  gap: 0.55rem;
+  justify-items: center;
+  gap: 0.6rem;
+}
+
+.habit-calendar-header .habit-pill {
+  justify-self: center;
+}
+
+.habit-visibility-toggle {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: rgba(148, 163, 184, 0.7);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.2s ease, background 0.2s ease;
+  justify-self: end;
+}
+
+.habit-visibility-toggle:hover {
+  color: var(--text-primary);
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.habit-visibility-toggle.is-active {
+  color: rgba(56, 189, 248, 0.85);
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.habit-visibility-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .habit-drag-handle {
@@ -734,6 +734,7 @@ button.ghost:hover {
   cursor: grab;
   transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease,
     transform 0.2s ease;
+  justify-self: start;
 }
 
 .habit-drag-handle:hover {
@@ -752,9 +753,14 @@ button.ghost:hover {
   outline-offset: 2px;
 }
 
-.habit-drag-handle span {
-  font-size: 0.95rem;
-  line-height: 1;
+.habit-drag-handle .icon {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.habit-visibility-toggle .icon {
+  width: 1.15rem;
+  height: 1.15rem;
 }
 
 .habit-calendar.is-dragging {
