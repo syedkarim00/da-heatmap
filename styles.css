@@ -207,6 +207,7 @@ button.ghost:hover {
   font-size: 0.7rem;
   color: var(--text-muted);
   margin: 0 auto;
+  transform: translateX(-0.15rem);
 }
 
 .selected-calendar-weekdays span {
@@ -669,6 +670,51 @@ button.ghost:hover {
   max-width: 100%;
 }
 
+.habit-calendar-footer {
+  align-self: stretch;
+  width: 100%;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.future-toggle {
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.55);
+  color: rgba(226, 232, 240, 0.75);
+  display: grid;
+  place-items: center;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease,
+    transform 0.2s ease;
+  margin-left: auto;
+  cursor: pointer;
+}
+
+.future-toggle span {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.future-toggle:hover {
+  transform: translateY(-1px);
+  background: rgba(148, 163, 184, 0.2);
+  border-color: rgba(148, 163, 184, 0.45);
+  color: var(--text-primary);
+}
+
+.future-toggle.is-active {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.55);
+  color: var(--text-primary);
+}
+
+.future-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .habit-calendar-header {
   display: flex;
   align-items: center;
@@ -816,6 +862,10 @@ button.ghost:hover {
 
 .calendar-cell.is-future {
   opacity: 0.3;
+}
+
+.calendar-cell.is-hidden-future {
+  display: none;
 }
 
 .calendar-cell.is-done {

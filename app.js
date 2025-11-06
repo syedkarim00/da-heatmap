@@ -446,6 +446,7 @@ function migrateData(data) {
     }
     cloned.heatmapView = getViewConfig(cloned.heatmapView).key;
     cloned.weeklyTarget = sanitizeWeeklyTarget(cloned.weeklyTarget);
+    cloned.hideFuture = Boolean(cloned.hideFuture);
     return cloned;
   });
 
@@ -1626,15 +1627,6 @@ function renderHabitLibrary() {
     edit.textContent = "Edit";
     edit.addEventListener("click", () => openHabitForm(habit));
 
-    const archive = document.createElement("button");
-    archive.type = "button";
-    archive.textContent = habit.archived ? "Unarchive" : "Archive";
-    archive.addEventListener("click", () => {
-      habit.archived = !habit.archived;
-      saveData();
-      render();
-    });
-
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "danger icon-only";
@@ -1648,7 +1640,7 @@ function renderHabitLibrary() {
     });
     remove.classList.add("trailing");
 
-    actions.append(edit, archive, remove);
+    actions.append(edit, remove);
     item.append(actions);
     list.appendChild(item);
   });
@@ -1771,6 +1763,7 @@ function renderCalendar() {
 
   active.forEach((habit) => {
     const view = getHabitView(habit);
+    const hideFutureCells = Boolean(habit.hideFuture);
 
     if (!currentRow || currentRowView !== view) {
       currentRow = document.createElement("div");
@@ -1955,9 +1948,17 @@ function renderCalendar() {
               cell.classList.add("has-glow");
             }
           }
-          if (weekStart > today) {
+          const isFutureWeek = weekStart > today;
+          const weekContainsSelection =
+            hasValidSelectedDate && isDateInRange(selectedDateObj, weekStart, weekEnd);
+          if (isFutureWeek) {
             cell.classList.add("is-future");
             cell.disabled = true;
+            if (hideFutureCells && !weekContainsSelection) {
+              cell.classList.add("is-hidden-future");
+              cell.setAttribute("aria-hidden", "true");
+              cell.tabIndex = -1;
+            }
           }
           cell.classList.add("is-aggregate");
           const labelText = `${habit.name} week of ${shortDayFormatter.format(
@@ -1982,9 +1983,16 @@ function renderCalendar() {
           });
         } else {
           const iso = formatISO(date);
-          if (iso > todayIso) {
+          const isFutureDay = iso > todayIso;
+          if (isFutureDay) {
             cell.classList.add("is-future");
             cell.disabled = true;
+            const isSelectedDay = iso === selectedIso;
+            if (hideFutureCells && !isSelectedDay) {
+              cell.classList.add("is-hidden-future");
+              cell.setAttribute("aria-hidden", "true");
+              cell.tabIndex = -1;
+            }
           }
           const progress = getHabitProgress(iso, habit);
           const intensity = intensityForHabitDay(iso, habit);
@@ -2030,7 +2038,33 @@ function renderCalendar() {
       });
     });
 
-    habitBlock.append(header, cellsWrapper);
+    const footer = document.createElement("div");
+    footer.className = "habit-calendar-footer";
+
+    const futureToggle = document.createElement("button");
+    futureToggle.type = "button";
+    futureToggle.className = "future-toggle";
+    futureToggle.classList.toggle("is-active", hideFutureCells);
+    futureToggle.setAttribute("aria-pressed", hideFutureCells ? "true" : "false");
+    futureToggle.setAttribute(
+      "aria-label",
+      hideFutureCells
+        ? `Show future days for ${habit.name}`
+        : `Hide future days for ${habit.name}`
+    );
+    futureToggle.title = hideFutureCells ? "Show future days" : "Hide future days";
+    futureToggle.innerHTML = `<span aria-hidden="true">${
+      hideFutureCells ? "👁‍🗨" : "👁"
+    }</span>`;
+    futureToggle.addEventListener("click", () => {
+      habit.hideFuture = !Boolean(habit.hideFuture);
+      saveData();
+      render();
+    });
+
+    footer.appendChild(futureToggle);
+
+    habitBlock.append(header, cellsWrapper, footer);
     if (currentRow) {
       currentRow.appendChild(habitBlock);
     }
@@ -2221,6 +2255,7 @@ elements.habitForm.addEventListener("submit", (event) => {
         state.data.settings && state.data.settings.heatmapView
       ).key,
       weeklyTarget: DEFAULT_WEEKLY_TARGET,
+      hideFuture: false,
     });
     state.selectedHabitId = id;
   }
