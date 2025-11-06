@@ -1,5 +1,19 @@
 const STORAGE_KEY = "habit-tracker-data-v2";
 const LEGACY_STORAGE_KEYS = ["lod-tracker-data-v2"];
+const ACCOUNT_STORAGE_KEY = "habit-tracker-accounts";
+const SESSION_STORAGE_KEY = "habit-tracker-session";
+const DEFAULT_SYNC_SETTINGS = {
+  enabled: false,
+  provider: "local",
+  supabase: {
+    url: "",
+    anonKey: "",
+    table: "tracker_profiles",
+  },
+};
+
+const REMOTE_PUSH_DEBOUNCE = 800;
+const MIN_PASSWORD_LENGTH = 8;
 
 const monthFormatter = new Intl.DateTimeFormat("en", {
   month: "long",
@@ -16,6 +30,8 @@ const shortDayFormatter = new Intl.DateTimeFormat("en", {
   month: "short",
   day: "numeric",
 });
+
+const relativeTimeFormatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 
 const DEFAULT_HEATMAP_VIEW = "month";
 const DEFAULT_WEEKLY_TARGET = 3;
@@ -105,11 +121,14 @@ const HEATMAP_VIEWS = {
   },
 };
 
-const loadedData = loadData();
 const today = new Date();
 const initialSelectedDate = formatISO(today);
 const state = {
-  data: loadedData,
+  accountStore: loadAccountStore(),
+  currentUserId: null,
+  isAuthenticated: false,
+  authMode: "signIn",
+  data: createSeedData(),
   viewAnchors: createInitialAnchors(today),
   selectedDate: initialSelectedDate,
   selectedCalendarMonth: startOfMonth(today),
@@ -127,9 +146,44 @@ const state = {
   selectionGlowTimer: null,
   draggingHabitId: null,
   dragHandleActive: null,
+  remoteSync: {
+    pending: false,
+    lastSyncedAt: null,
+    lastError: null,
+    pushTimer: null,
+    inFlight: null,
+  },
 };
 
 const elements = {
+  appShell: document.getElementById("appShell"),
+  authGate: document.getElementById("authGate"),
+  signInForm: document.getElementById("signInForm"),
+  registerForm: document.getElementById("registerForm"),
+  signInEmail: document.getElementById("signInEmail"),
+  signInPassword: document.getElementById("signInPassword"),
+  registerEmail: document.getElementById("registerEmail"),
+  registerPassword: document.getElementById("registerPassword"),
+  registerConfirm: document.getElementById("registerConfirm"),
+  showRegister: document.getElementById("showRegister"),
+  showSignIn: document.getElementById("showSignIn"),
+  authError: document.getElementById("authError"),
+  authSubtitle: document.getElementById("authSubtitle"),
+  accountEmail: document.getElementById("accountEmail"),
+  syncStatus: document.getElementById("syncStatus"),
+  syncNow: document.getElementById("syncNow"),
+  openAccountSettings: document.getElementById("openAccountSettings"),
+  signOut: document.getElementById("signOut"),
+  accountSettingsDialog: document.getElementById("accountSettingsDialog"),
+  accountSettingsForm: document.getElementById("accountSettingsForm"),
+  syncEnabled: document.getElementById("syncEnabled"),
+  syncProvider: document.getElementById("syncProvider"),
+  supabaseFields: document.getElementById("supabaseFields"),
+  syncSupabaseUrl: document.getElementById("syncSupabaseUrl"),
+  syncSupabaseAnonKey: document.getElementById("syncSupabaseAnonKey"),
+  syncSupabaseTable: document.getElementById("syncSupabaseTable"),
+  syncSettingsError: document.getElementById("syncSettingsError"),
+  syncSettingsCancel: document.getElementById("syncSettingsCancel"),
   monthLabel: document.getElementById("monthLabel"),
   prevMonth: document.getElementById("prevMonth"),
   nextMonth: document.getElementById("nextMonth"),
@@ -166,12 +220,159 @@ const elements = {
   heatmapWeeklyTarget: document.getElementById("heatmapWeeklyTarget"),
 };
 
-function loadData() {
+function cloneDefaultSyncSettings() {
+  return {
+    enabled: DEFAULT_SYNC_SETTINGS.enabled,
+    provider: DEFAULT_SYNC_SETTINGS.provider,
+    supabase: { ...DEFAULT_SYNC_SETTINGS.supabase },
+  };
+}
+
+function normalizeSyncSettings(sync) {
+  const base = cloneDefaultSyncSettings();
+  if (!sync || typeof sync !== "object") {
+    return base;
+  }
+  const provider = sync.provider === "supabase" ? "supabase" : "local";
+  const normalized = {
+    enabled: provider === "supabase" && Boolean(sync.enabled),
+    provider,
+    supabase: {
+      url: sync.supabase && typeof sync.supabase.url === "string" ? sync.supabase.url : base.supabase.url,
+      anonKey:
+        sync.supabase && typeof sync.supabase.anonKey === "string"
+          ? sync.supabase.anonKey
+          : base.supabase.anonKey,
+      table:
+        sync.supabase && typeof sync.supabase.table === "string" && sync.supabase.table.trim() !== ""
+          ? sync.supabase.table
+          : base.supabase.table,
+    },
+  };
+  if (normalized.provider !== "supabase") {
+    normalized.enabled = false;
+  }
+  return normalized;
+}
+
+function loadAccountStore() {
   try {
-    let sourceKey = STORAGE_KEY;
-    let stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(ACCOUNT_STORAGE_KEY);
     if (!stored) {
-      for (const legacyKey of LEGACY_STORAGE_KEYS) {
+      return { users: {} };
+    }
+    const parsed = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object" || typeof parsed.users !== "object") {
+      return { users: {} };
+    }
+    const users = {};
+    Object.entries(parsed.users).forEach(([id, record]) => {
+      if (!record || typeof record !== "object") {
+        return;
+      }
+      const normalizedId = (id || "").toLowerCase();
+      users[normalizedId] = {
+        id: normalizedId,
+        email: record.email || normalizedId,
+        passwordHash: record.passwordHash || "",
+        createdAt: record.createdAt || null,
+        lastLoginAt: record.lastLoginAt || null,
+        sync: normalizeSyncSettings(record.sync),
+      };
+    });
+    return { users };
+  } catch (error) {
+    console.warn("Failed to parse account store", error);
+    return { users: {} };
+  }
+}
+
+function saveAccountStore(store) {
+  try {
+    localStorage.setItem(ACCOUNT_STORAGE_KEY, JSON.stringify(store));
+  } catch (error) {
+    console.warn("Failed to persist account store", error);
+  }
+}
+
+function normalizeEmail(value) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function loadSession() {
+  try {
+    const stored = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!stored) {
+      return null;
+    }
+    const parsed = JSON.parse(stored);
+    if (parsed && typeof parsed === "object" && parsed.userId) {
+      return parsed;
+    }
+  } catch (error) {
+    console.warn("Failed to parse saved session", error);
+  }
+  return null;
+}
+
+function saveSession(userId) {
+  if (!userId) {
+    return;
+  }
+  try {
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ userId }));
+  } catch (error) {
+    console.warn("Failed to persist session", error);
+  }
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
+function getUserStorageKey(userId) {
+  return `${STORAGE_KEY}:${userId}`;
+}
+
+function clearLegacyKeys() {
+  localStorage.removeItem(STORAGE_KEY);
+  LEGACY_STORAGE_KEYS.forEach((legacyKey) => {
+    localStorage.removeItem(legacyKey);
+  });
+}
+
+function ensureDataMeta(data) {
+  if (!data.meta || typeof data.meta !== "object") {
+    data.meta = {};
+  }
+  if (!data.meta.updatedAt) {
+    data.meta.updatedAt = new Date().toISOString();
+  }
+}
+
+function touchData(data) {
+  ensureDataMeta(data);
+  data.meta.updatedAt = new Date().toISOString();
+}
+
+function getDataTimestamp(data) {
+  if (!data || !data.meta || !data.meta.updatedAt) {
+    return null;
+  }
+  const date = new Date(data.meta.updatedAt);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function loadUserData(userId) {
+  if (!userId) {
+    return createSeedData();
+  }
+  try {
+    let sourceKey = getUserStorageKey(userId);
+    let stored = localStorage.getItem(sourceKey);
+    if (!stored) {
+      const legacyKeys = [STORAGE_KEY, ...LEGACY_STORAGE_KEYS];
+      for (const legacyKey of legacyKeys) {
         const legacyValue = localStorage.getItem(legacyKey);
         if (legacyValue) {
           stored = legacyValue;
@@ -183,32 +384,659 @@ function loadData() {
 
     if (!stored) {
       const seed = createSeedData();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
+      persistUserData(userId, seed, { skipTouch: true });
       return seed;
     }
 
     const parsed = JSON.parse(stored);
     const normalized = migrateData(parsed);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-    if (sourceKey !== STORAGE_KEY) {
-      localStorage.removeItem(sourceKey);
+    persistUserData(userId, normalized, { skipTouch: true });
+    if (sourceKey !== getUserStorageKey(userId)) {
+      clearLegacyKeys();
     }
     return normalized;
   } catch (error) {
     console.warn("Failed to parse stored data, resetting", error);
     const seed = createSeedData();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
+    persistUserData(userId, seed, { skipTouch: true });
     return seed;
   }
 }
 
+function persistUserData(userId, data, options = {}) {
+  if (!userId || !data) {
+    return;
+  }
+  const { skipTouch = false } = options;
+  if (skipTouch) {
+    ensureDataMeta(data);
+  } else {
+    touchData(data);
+  }
+  try {
+    localStorage.setItem(getUserStorageKey(userId), JSON.stringify(data));
+  } catch (error) {
+    console.warn("Failed to persist tracker data", error);
+  }
+}
+
 function saveData() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
-  LEGACY_STORAGE_KEYS.forEach((legacyKey) => {
-    if (legacyKey !== STORAGE_KEY) {
-      localStorage.removeItem(legacyKey);
+  if (!state.isAuthenticated || !state.currentUserId) {
+    return;
+  }
+  touchData(state.data);
+  persistUserData(state.currentUserId, state.data, { skipTouch: true });
+  scheduleRemotePush();
+}
+
+function cancelRemotePush() {
+  if (state.remoteSync.pushTimer) {
+    clearTimeout(state.remoteSync.pushTimer);
+    state.remoteSync.pushTimer = null;
+  }
+}
+
+function scheduleRemotePush() {
+  const account = getCurrentAccountRecord();
+  if (!account || !isSyncEnabled(account)) {
+    updateSyncStatus();
+    return;
+  }
+  cancelRemotePush();
+  state.remoteSync.pending = true;
+  state.remoteSync.lastError = null;
+  updateSyncStatus();
+  state.remoteSync.pushTimer = setTimeout(async () => {
+    state.remoteSync.pushTimer = null;
+    try {
+      await pushRemoteData(account);
+    } catch (error) {
+      console.error("Failed to sync data", error);
+      state.remoteSync.pending = false;
+      state.remoteSync.lastError = error && error.message ? error.message : String(error);
+      updateSyncStatus();
+    }
+  }, REMOTE_PUSH_DEBOUNCE);
+}
+
+async function hashPassword(password) {
+  if (typeof password !== "string") {
+    return "";
+  }
+  const input = password.normalize();
+  if (globalThis.crypto && globalThis.crypto.subtle && typeof globalThis.crypto.subtle.digest === "function") {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(input);
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", data);
+    return Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+  }
+  return simpleHash(input);
+}
+
+function simpleHash(value) {
+  let hash = 0;
+  if (!value) {
+    return "";
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(index);
+    hash |= 0;
+  }
+  return hash.toString(16);
+}
+
+function getCurrentAccountRecord() {
+  if (!state.currentUserId) {
+    return null;
+  }
+  return state.accountStore.users[state.currentUserId] || null;
+}
+
+function resetRemoteSyncState() {
+  cancelRemotePush();
+  state.remoteSync.pending = false;
+  state.remoteSync.lastError = null;
+  state.remoteSync.lastSyncedAt = null;
+  state.remoteSync.inFlight = null;
+}
+
+function isSyncEnabled(account) {
+  if (!account || !account.sync) {
+    return false;
+  }
+  if (!account.sync.enabled || account.sync.provider !== "supabase") {
+    return false;
+  }
+  const supabase = account.sync.supabase || {};
+  return Boolean(supabase.url && supabase.anonKey && supabase.table);
+}
+
+function setAuthMode(mode) {
+  state.authMode = mode === "register" ? "register" : "signIn";
+  const isRegister = state.authMode === "register";
+  if (elements.signInForm) {
+    elements.signInForm.classList.toggle("is-hidden", isRegister);
+  }
+  if (elements.registerForm) {
+    elements.registerForm.classList.toggle("is-hidden", !isRegister);
+  }
+  if (elements.showRegister) {
+    elements.showRegister.classList.toggle("is-hidden", isRegister);
+  }
+  if (elements.showSignIn) {
+    elements.showSignIn.classList.toggle("is-hidden", !isRegister);
+  }
+  if (elements.authSubtitle) {
+    elements.authSubtitle.textContent = isRegister
+      ? "Create an account to start tracking."
+      : "Sign in to access your habits on any device.";
+  }
+  clearAuthError();
+}
+
+function setAuthError(message) {
+  if (elements.authError) {
+    elements.authError.textContent = message || "";
+  }
+}
+
+function clearAuthError() {
+  if (elements.authError) {
+    elements.authError.textContent = "";
+  }
+  if (elements.syncSettingsError) {
+    elements.syncSettingsError.textContent = "";
+  }
+}
+
+function showAuthGate() {
+  if (elements.authGate) {
+    elements.authGate.classList.remove("is-hidden");
+  }
+  if (elements.appShell) {
+    elements.appShell.classList.add("is-hidden");
+  }
+  setAuthMode(state.authMode);
+}
+
+function hideAuthGate() {
+  if (elements.authGate) {
+    elements.authGate.classList.add("is-hidden");
+  }
+  if (elements.appShell) {
+    elements.appShell.classList.remove("is-hidden");
+  }
+}
+
+function resetUiState(referenceDate = new Date()) {
+  const anchorDate = new Date(referenceDate);
+  state.viewAnchors = createInitialAnchors(anchorDate);
+  updateSelectedDate(formatISO(anchorDate));
+  state.selectedCalendarMonth = startOfMonth(anchorDate);
+  state.selectedHabitId = null;
+  state.searchTerm = "";
+  state.habitEditing = null;
+  state.libraryFilter = "active";
+  state.heatmapSettingsHabit = null;
+  state.lastLoggedHabit = null;
+  state.lastToggledTodo = null;
+}
+
+function updateAccountBar() {
+  const account = getCurrentAccountRecord();
+  if (elements.accountEmail) {
+    elements.accountEmail.textContent = account ? account.email : "";
+  }
+  const syncAvailable = account ? isSyncEnabled(account) : false;
+  if (elements.syncNow) {
+    elements.syncNow.disabled = !syncAvailable;
+    elements.syncNow.setAttribute("aria-disabled", syncAvailable ? "false" : "true");
+  }
+}
+
+function formatTimeAgo(iso) {
+  if (!iso) {
+    return "";
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const now = new Date();
+  const diffMs = date.getTime() - now.getTime();
+  const diffMinutes = Math.round(diffMs / 60000);
+  if (Math.abs(diffMinutes) < 1) {
+    return "just now";
+  }
+  if (Math.abs(diffMinutes) < 60) {
+    return relativeTimeFormatter.format(diffMinutes, "minute");
+  }
+  const diffHours = Math.round(diffMs / 3600000);
+  if (Math.abs(diffHours) < 24) {
+    return relativeTimeFormatter.format(diffHours, "hour");
+  }
+  const diffDays = Math.round(diffMs / 86400000);
+  return relativeTimeFormatter.format(diffDays, "day");
+}
+
+function updateSyncStatus() {
+  if (!elements.syncStatus) {
+    return;
+  }
+  if (!state.isAuthenticated) {
+    elements.syncStatus.textContent = "";
+    return;
+  }
+  const account = getCurrentAccountRecord();
+  if (!isSyncEnabled(account)) {
+    elements.syncStatus.textContent = "Local only";
+    return;
+  }
+  if (state.remoteSync.pending || state.remoteSync.pushTimer || state.remoteSync.inFlight) {
+    elements.syncStatus.textContent = "Syncing…";
+    return;
+  }
+  if (state.remoteSync.lastError) {
+    elements.syncStatus.textContent = `Sync error: ${state.remoteSync.lastError}`;
+    return;
+  }
+  if (state.remoteSync.lastSyncedAt) {
+    elements.syncStatus.textContent = `Synced ${formatTimeAgo(state.remoteSync.lastSyncedAt)}`;
+    return;
+  }
+  elements.syncStatus.textContent = "Cloud sync ready";
+}
+
+function sanitizeSupabaseUrl(url) {
+  if (!url) {
+    return "";
+  }
+  return url.endsWith("/") ? url.slice(0, -1) : url;
+}
+
+function validateSupabaseConfig(config) {
+  if (!config || config.provider !== "supabase" || !config.enabled) {
+    return null;
+  }
+  if (!config.supabase || !config.supabase.url) {
+    return "Supabase URL is required.";
+  }
+  if (!config.supabase.anonKey) {
+    return "Supabase anon or service role key is required.";
+  }
+  if (!config.supabase.table) {
+    return "Supabase table name is required.";
+  }
+  return null;
+}
+
+function applySyncProviderVisibility(provider) {
+  const isSupabase = provider === "supabase";
+  if (elements.syncEnabled) {
+    elements.syncEnabled.disabled = !isSupabase;
+    if (!isSupabase) {
+      elements.syncEnabled.checked = false;
+    }
+  }
+  if (elements.supabaseFields) {
+    elements.supabaseFields.classList.toggle("is-hidden", !isSupabase);
+  }
+}
+
+function populateSyncSettings() {
+  const account = getCurrentAccountRecord();
+  const sync = account ? normalizeSyncSettings(account.sync) : cloneDefaultSyncSettings();
+  if (elements.syncProvider) {
+    elements.syncProvider.value = sync.provider;
+  }
+  if (elements.syncEnabled) {
+    elements.syncEnabled.checked = Boolean(sync.enabled && sync.provider === "supabase");
+  }
+  if (elements.syncSupabaseUrl) {
+    elements.syncSupabaseUrl.value = sync.supabase.url || "";
+  }
+  if (elements.syncSupabaseAnonKey) {
+    elements.syncSupabaseAnonKey.value = sync.supabase.anonKey || "";
+  }
+  if (elements.syncSupabaseTable) {
+    elements.syncSupabaseTable.value = sync.supabase.table || DEFAULT_SYNC_SETTINGS.supabase.table;
+  }
+  applySyncProviderVisibility(sync.provider);
+  clearAuthError();
+}
+
+async function pullRemoteData(account) {
+  if (!isSyncEnabled(account)) {
+    return null;
+  }
+  const supabase = account.sync.supabase || {};
+  const baseUrl = sanitizeSupabaseUrl(supabase.url);
+  const requestUrl = `${baseUrl}/rest/v1/${supabase.table}?select=user_id,data,updated_at&user_id=eq.${encodeURIComponent(
+    account.id
+  )}`;
+  const response = await fetch(requestUrl, {
+    headers: {
+      apikey: supabase.anonKey,
+      Authorization: `Bearer ${supabase.anonKey}`,
+      Accept: "application/json",
+    },
+  });
+  if (!response.ok) {
+    if (response.status === 404) {
+      return null;
+    }
+    const message = await response.text();
+    throw new Error(message || `Supabase error ${response.status}`);
+  }
+  const payload = await response.json();
+  if (!Array.isArray(payload) || payload.length === 0) {
+    return null;
+  }
+  const record = payload[0];
+  let data = record.data;
+  if (typeof data === "string") {
+    try {
+      data = JSON.parse(data);
+    } catch (error) {
+      console.warn("Failed to parse remote payload", error);
+      data = null;
+    }
+  }
+  return {
+    data,
+    updatedAt: record.updated_at || null,
+  };
+}
+
+async function pushRemoteData(account) {
+  if (!isSyncEnabled(account)) {
+    return;
+  }
+  const supabase = account.sync.supabase || {};
+  const baseUrl = sanitizeSupabaseUrl(supabase.url);
+  const target = `${baseUrl}/rest/v1/${supabase.table}`;
+  touchData(state.data);
+  persistUserData(account.id, state.data, { skipTouch: true });
+  const payload = {
+    user_id: account.id,
+    data: state.data,
+    updated_at: state.data.meta ? state.data.meta.updatedAt : new Date().toISOString(),
+  };
+  const response = await fetch(target, {
+    method: "POST",
+    headers: {
+      apikey: supabase.anonKey,
+      Authorization: `Bearer ${supabase.anonKey}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=representation",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Supabase error ${response.status}`);
+  }
+  let body = null;
+  try {
+    body = await response.json();
+  } catch (error) {
+    body = null;
+  }
+  if (Array.isArray(body) && body[0] && body[0].updated_at) {
+    state.remoteSync.lastSyncedAt = body[0].updated_at;
+  } else {
+    state.remoteSync.lastSyncedAt = payload.updated_at;
+  }
+  state.remoteSync.pending = false;
+  state.remoteSync.lastError = null;
+  updateSyncStatus();
+}
+
+function runSyncPromise(promise) {
+  state.remoteSync.inFlight = promise.finally(() => {
+    if (state.remoteSync.inFlight === promise) {
+      state.remoteSync.inFlight = null;
     }
   });
+  return promise;
+}
+
+async function performSync(options = {}) {
+  const { forcePush = false } = options;
+  const account = getCurrentAccountRecord();
+  if (!isSyncEnabled(account)) {
+    updateSyncStatus();
+    return;
+  }
+  if (state.remoteSync.inFlight) {
+    return state.remoteSync.inFlight;
+  }
+  cancelRemotePush();
+  const syncPromise = (async () => {
+    try {
+      state.remoteSync.pending = true;
+      state.remoteSync.lastError = null;
+      updateSyncStatus();
+      const remote = await pullRemoteData(account);
+      const localTimestamp = getDataTimestamp(state.data);
+      let remoteTimestamp = null;
+      if (remote && remote.data) {
+        const normalized = migrateData(remote.data);
+        remoteTimestamp = getDataTimestamp(normalized) || (remote.updatedAt ? new Date(remote.updatedAt) : null);
+        if (!localTimestamp || (remoteTimestamp && remoteTimestamp > localTimestamp)) {
+          state.data = normalized;
+          persistUserData(account.id, state.data, { skipTouch: true });
+          render();
+        }
+      }
+      const shouldPush =
+        forcePush ||
+        !remote ||
+        !remoteTimestamp ||
+        (localTimestamp && (!remoteTimestamp || localTimestamp >= remoteTimestamp));
+      if (shouldPush) {
+        await pushRemoteData(account);
+      } else {
+        state.remoteSync.pending = false;
+        state.remoteSync.lastError = null;
+        state.remoteSync.lastSyncedAt = remoteTimestamp
+          ? remoteTimestamp.toISOString()
+          : remote && remote.updatedAt
+          ? remote.updatedAt
+          : state.remoteSync.lastSyncedAt;
+        updateSyncStatus();
+      }
+    } catch (error) {
+      state.remoteSync.pending = false;
+      state.remoteSync.lastError = error && error.message ? error.message : String(error);
+      updateSyncStatus();
+      throw error;
+    }
+  })();
+  return runSyncPromise(syncPromise);
+}
+
+async function completeSignIn(userId, options = {}) {
+  const { skipSync = false } = options;
+  const normalizedId = normalizeEmail(userId);
+  const account = state.accountStore.users[normalizedId];
+  if (!account) {
+    throw new Error("Account not found");
+  }
+  state.currentUserId = normalizedId;
+  state.isAuthenticated = true;
+  state.selectionGlowActive = true;
+  state.legendColors = [];
+  resetRemoteSyncState();
+  resetUiState(new Date());
+  state.data = loadUserData(normalizedId);
+  account.lastLoginAt = new Date().toISOString();
+  saveAccountStore(state.accountStore);
+  saveSession(normalizedId);
+  hideAuthGate();
+  clearAuthError();
+  triggerSelectionGlow();
+  render();
+  updateAccountBar();
+  updateSyncStatus();
+  if (!skipSync && isSyncEnabled(account)) {
+    try {
+      await performSync({ forcePush: false });
+      render();
+    } catch (error) {
+      console.warn("Initial sync failed", error);
+    }
+  }
+}
+
+function handleSignOut() {
+  if (!state.isAuthenticated) {
+    return;
+  }
+  clearSession();
+  resetRemoteSyncState();
+  stopLegendAnimation();
+  clearSelectionGlowTimer();
+  state.isAuthenticated = false;
+  state.currentUserId = null;
+  state.data = createSeedData();
+  resetUiState(new Date());
+  showAuthGate();
+  updateAccountBar();
+  updateSyncStatus();
+}
+
+async function handleSignIn(event) {
+  event.preventDefault();
+  clearAuthError();
+  const email = normalizeEmail(elements.signInEmail ? elements.signInEmail.value : "");
+  const password = elements.signInPassword ? elements.signInPassword.value : "";
+  if (!email || !password) {
+    setAuthError("Email and password are required.");
+    return;
+  }
+  const account = state.accountStore.users[email];
+  if (!account) {
+    setAuthError("Account not found.");
+    return;
+  }
+  const hash = await hashPassword(password);
+  if (hash !== account.passwordHash) {
+    setAuthError("Incorrect password.");
+    return;
+  }
+  await completeSignIn(email);
+  if (elements.signInForm) {
+    elements.signInForm.reset();
+  }
+  if (elements.registerForm) {
+    elements.registerForm.reset();
+  }
+}
+
+async function handleRegister(event) {
+  event.preventDefault();
+  clearAuthError();
+  const emailRaw = elements.registerEmail ? elements.registerEmail.value : "";
+  const email = normalizeEmail(emailRaw);
+  const password = elements.registerPassword ? elements.registerPassword.value : "";
+  const confirm = elements.registerConfirm ? elements.registerConfirm.value : "";
+  if (!email) {
+    setAuthError("Email is required.");
+    return;
+  }
+  if (state.accountStore.users[email]) {
+    setAuthError("An account with this email already exists.");
+    return;
+  }
+  if (!password || password.length < MIN_PASSWORD_LENGTH) {
+    setAuthError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+    return;
+  }
+  if (password !== confirm) {
+    setAuthError("Passwords do not match.");
+    return;
+  }
+  const passwordHash = await hashPassword(password);
+  state.accountStore.users[email] = {
+    id: email,
+    email: emailRaw.trim() || email,
+    passwordHash,
+    createdAt: new Date().toISOString(),
+    lastLoginAt: null,
+    sync: cloneDefaultSyncSettings(),
+  };
+  saveAccountStore(state.accountStore);
+  await completeSignIn(email, { skipSync: true });
+  if (elements.registerForm) {
+    elements.registerForm.reset();
+  }
+  if (elements.signInForm) {
+    elements.signInForm.reset();
+  }
+}
+
+function handleSyncSettingsSubmit(event) {
+  event.preventDefault();
+  clearAuthError();
+  const account = getCurrentAccountRecord();
+  if (!account) {
+    return;
+  }
+  const provider = elements.syncProvider ? elements.syncProvider.value : "local";
+  const enabled = provider === "supabase" && elements.syncEnabled ? elements.syncEnabled.checked : false;
+  const supabaseConfig = {
+    url: elements.syncSupabaseUrl ? elements.syncSupabaseUrl.value.trim() : "",
+    anonKey: elements.syncSupabaseAnonKey ? elements.syncSupabaseAnonKey.value.trim() : "",
+    table:
+      elements.syncSupabaseTable && elements.syncSupabaseTable.value.trim()
+        ? elements.syncSupabaseTable.value.trim()
+        : DEFAULT_SYNC_SETTINGS.supabase.table,
+  };
+  const nextSync = {
+    enabled,
+    provider,
+    supabase: supabaseConfig,
+  };
+  const validationError = validateSupabaseConfig(nextSync);
+  if (validationError) {
+    if (elements.syncSettingsError) {
+      elements.syncSettingsError.textContent = validationError;
+    }
+    return;
+  }
+  account.sync = normalizeSyncSettings(nextSync);
+  saveAccountStore(state.accountStore);
+  if (elements.accountSettingsDialog) {
+    elements.accountSettingsDialog.close();
+  }
+  updateAccountBar();
+  updateSyncStatus();
+  if (isSyncEnabled(account)) {
+    performSync({ forcePush: true })
+      .then(() => {
+        render();
+      })
+      .catch((error) => {
+        console.warn("Manual sync failed", error);
+      });
+  }
+}
+
+function handleManualSync() {
+  const account = getCurrentAccountRecord();
+  if (!isSyncEnabled(account)) {
+    return;
+  }
+  performSync({ forcePush: true })
+    .then(() => {
+      render();
+    })
+    .catch((error) => {
+      console.warn("Manual sync failed", error);
+    });
 }
 
 function ensureSettingsObject() {
@@ -453,6 +1281,7 @@ function createSeedData() {
     entries: {},
     todos: [],
     settings: { ...DEFAULT_SETTINGS },
+    meta: { updatedAt: new Date().toISOString() },
   };
 }
 
@@ -463,6 +1292,12 @@ function migrateData(data) {
   }
   if (!Array.isArray(next.todos)) {
     next.todos = [];
+  }
+
+  if (!next.meta || typeof next.meta !== "object") {
+    next.meta = { updatedAt: new Date().toISOString() };
+  } else if (!next.meta.updatedAt) {
+    next.meta.updatedAt = new Date().toISOString();
   }
 
   const fallbackView =
@@ -2115,6 +2950,11 @@ function renderCalendar() {
 }
 
 function render() {
+  if (!state.isAuthenticated) {
+    return;
+  }
+  updateAccountBar();
+  updateSyncStatus();
   ensureSelectedHabit();
   ensureSelectedDateWithinView();
   renderHeatmapMeta();
@@ -2140,6 +2980,66 @@ function shiftCalendarMonth(direction) {
   base.setMonth(base.getMonth() + direction);
   state.selectedCalendarMonth = startOfMonth(base);
   renderSelectedDayCalendar();
+}
+
+if (elements.signInForm) {
+  elements.signInForm.addEventListener("submit", handleSignIn);
+}
+
+if (elements.registerForm) {
+  elements.registerForm.addEventListener("submit", handleRegister);
+}
+
+if (elements.showRegister) {
+  elements.showRegister.addEventListener("click", () => setAuthMode("register"));
+}
+
+if (elements.showSignIn) {
+  elements.showSignIn.addEventListener("click", () => setAuthMode("signIn"));
+}
+
+if (elements.signOut) {
+  elements.signOut.addEventListener("click", handleSignOut);
+}
+
+if (elements.openAccountSettings) {
+  elements.openAccountSettings.addEventListener("click", () => {
+    populateSyncSettings();
+    if (elements.accountSettingsDialog) {
+      elements.accountSettingsDialog.showModal();
+    }
+  });
+}
+
+if (elements.syncSettingsCancel) {
+  elements.syncSettingsCancel.addEventListener("click", () => {
+    if (elements.accountSettingsDialog) {
+      elements.accountSettingsDialog.close();
+    }
+  });
+}
+
+if (elements.accountSettingsDialog) {
+  elements.accountSettingsDialog.addEventListener("close", () => {
+    if (elements.syncSettingsError) {
+      elements.syncSettingsError.textContent = "";
+    }
+  });
+}
+
+if (elements.accountSettingsForm) {
+  elements.accountSettingsForm.addEventListener("submit", handleSyncSettingsSubmit);
+}
+
+if (elements.syncProvider) {
+  elements.syncProvider.addEventListener("change", (event) => {
+    const provider = event.target && event.target.value ? event.target.value : "local";
+    applySyncProviderVisibility(provider);
+  });
+}
+
+if (elements.syncNow) {
+  elements.syncNow.addEventListener("click", handleManualSync);
 }
 
 if (elements.prevMonth) {
@@ -2341,5 +3241,20 @@ window.addEventListener("beforeunload", () => {
   clearSelectionGlowTimer();
 });
 
-triggerSelectionGlow();
-render();
+async function init() {
+  showAuthGate();
+  setAuthMode(state.authMode);
+  updateAccountBar();
+  updateSyncStatus();
+  const session = loadSession();
+  if (session && session.userId && state.accountStore.users[session.userId]) {
+    try {
+      await completeSignIn(session.userId);
+    } catch (error) {
+      console.warn("Failed to restore session", error);
+      handleSignOut();
+    }
+  }
+}
+
+init();

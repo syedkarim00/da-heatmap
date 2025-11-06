@@ -47,6 +47,10 @@ body {
   color: var(--text-primary);
 }
 
+.is-hidden {
+  display: none !important;
+}
+
 h1,
  h2,
  h3 {
@@ -83,10 +87,153 @@ button:disabled {
   height: 1em;
 }
 
+.auth-gate {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.2), transparent 55%),
+    radial-gradient(circle at 80% 25%, rgba(251, 191, 36, 0.18), transparent 55%),
+    var(--bg);
+  z-index: 10;
+}
+
+.auth-gate.is-hidden {
+  display: none;
+}
+
+.auth-card {
+  width: min(420px, 100%);
+  background: var(--surface-strong);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--surface-border);
+  padding: 2.25rem 2rem;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  backdrop-filter: blur(24px);
+}
+
+.auth-header h1 {
+  font-size: 2.1rem;
+  margin-bottom: 0.25rem;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auth-form.is-hidden {
+  display: none;
+}
+
+.auth-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.auth-form label {
+  font-weight: 500;
+}
+
+.auth-form input {
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.65);
+  color: var(--text-primary);
+}
+
+.auth-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35);
+}
+
+.auth-error {
+  min-height: 1.25rem;
+  color: #fca5a5;
+  font-size: 0.9rem;
+}
+
+.auth-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.95rem;
+}
+
+.auth-switch button {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.account-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1.5rem 2.5rem 0;
+}
+
+.account-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.account-info strong {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.account-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+button.small {
+  font-size: 0.9rem;
+  padding: 0.35rem 0.85rem;
+}
+
+.ghost.small {
+  padding: 0.35rem 0.85rem;
+}
+
+.sync-status {
+  min-height: 1.1rem;
+}
+
+.provider-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.provider-fields.is-hidden {
+  display: none;
+}
+
 .app-shell {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+.app-shell.is-hidden {
+  display: none;
 }
 
 button.primary {
@@ -1121,8 +1268,13 @@ button.ghost.icon-only:hover {
 }
 
 .modal-content input[type="text"],
+.modal-content input[type="email"],
+.modal-content input[type="password"],
+.modal-content input[type="url"],
+.modal-content input[type="number"],
 .modal-content input[type="color"],
-.modal-content textarea {
+.modal-content textarea,
+.modal-content select {
   padding: 0.6rem 0.75rem;
   border-radius: var(--radius-sm);
   border: 1px solid rgba(148, 163, 184, 0.2);

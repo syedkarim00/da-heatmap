@@ -18,7 +18,80 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <div id="authGate" class="auth-gate" aria-live="polite">
+      <div class="auth-card" role="dialog" aria-modal="true">
+        <header class="auth-header">
+          <h1>Habit tracker</h1>
+          <p id="authSubtitle" class="muted">
+            Sign in to access your habits on any device.
+          </p>
+        </header>
+        <form id="signInForm" class="auth-form" autocomplete="off">
+          <div class="field">
+            <label for="signInEmail">Email</label>
+            <input id="signInEmail" type="email" required autocomplete="username" />
+          </div>
+          <div class="field">
+            <label for="signInPassword">Password</label>
+            <input
+              id="signInPassword"
+              type="password"
+              required
+              minlength="8"
+              autocomplete="current-password"
+            />
+          </div>
+          <button type="submit" class="primary">Sign in</button>
+        </form>
+        <form id="registerForm" class="auth-form is-hidden" autocomplete="off">
+          <div class="field">
+            <label for="registerEmail">Email</label>
+            <input id="registerEmail" type="email" required autocomplete="username" />
+          </div>
+          <div class="field">
+            <label for="registerPassword">Password</label>
+            <input
+              id="registerPassword"
+              type="password"
+              required
+              minlength="8"
+              autocomplete="new-password"
+            />
+          </div>
+          <div class="field">
+            <label for="registerConfirm">Confirm password</label>
+            <input
+              id="registerConfirm"
+              type="password"
+              required
+              minlength="8"
+              autocomplete="new-password"
+            />
+          </div>
+          <button type="submit" class="primary">Create account</button>
+        </form>
+        <p id="authError" class="auth-error" role="status"></p>
+        <p class="auth-switch">
+          <button id="showRegister" type="button">Need an account?</button>
+          <button id="showSignIn" type="button" class="is-hidden">Have an account?</button>
+        </p>
+      </div>
+    </div>
+
+    <div class="app-shell is-hidden" id="appShell">
+      <header class="account-bar">
+        <div class="account-info">
+          <strong id="accountEmail"></strong>
+          <span id="syncStatus" class="sync-status muted small"></span>
+        </div>
+        <div class="account-actions">
+          <button id="syncNow" type="button" class="ghost small">Sync now</button>
+          <button id="openAccountSettings" type="button" class="ghost small">
+            Sync settings
+          </button>
+          <button id="signOut" type="button" class="ghost small">Sign out</button>
+        </div>
+      </header>
       <main class="app-layout">
         <aside class="sidebar">
           <section class="card today-card" aria-labelledby="todayHeading">
@@ -236,6 +309,55 @@
       </form>
     </dialog>
 
+    <dialog id="accountSettingsDialog" class="modal">
+      <form id="accountSettingsForm" method="dialog" class="modal-content">
+        <header>
+          <h2>Sync settings</h2>
+          <p class="muted small">
+            Configure an optional Supabase project to sync your tracker across devices.
+          </p>
+        </header>
+        <label class="toggle">
+          <input type="checkbox" id="syncEnabled" /> Enable cloud sync
+        </label>
+        <label>
+          Provider
+          <select id="syncProvider">
+            <option value="local">Local only</option>
+            <option value="supabase">Supabase</option>
+          </select>
+        </label>
+        <div id="supabaseFields" class="provider-fields">
+          <label>
+            Supabase URL
+            <input type="url" id="syncSupabaseUrl" placeholder="https://your-project.supabase.co" />
+          </label>
+          <label>
+            Service role key or anon key
+            <input
+              type="text"
+              id="syncSupabaseAnonKey"
+              placeholder="supabase service role or anon key"
+            />
+          </label>
+          <label>
+            Table name
+            <input type="text" id="syncSupabaseTable" placeholder="tracker_profiles" />
+          </label>
+          <p class="muted small">
+            The table must include <code>user_id</code> (text, primary key) and <code>data</code> (jsonb) columns with
+            Row Level Security configured for your key.
+          </p>
+        </div>
+        <p id="syncSettingsError" class="auth-error" role="status"></p>
+        <footer class="modal-actions">
+          <button type="button" id="syncSettingsCancel" class="ghost">Cancel</button>
+          <button type="submit" class="primary">Save</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <script type="module" src="app.js"></script>
     <script type="module" src="app.js"></script>
     <script>
   if ('serviceWorker' in navigator) {
