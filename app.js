@@ -51,6 +51,9 @@ const DEFAULT_SETTINGS = {
 
 const LEGEND_CYCLE_INTERVAL = 2000;
 const SELECTION_GLOW_DURATION = 10000;
+const SESSION_REFRESH_THRESHOLD = 60 * 1000;
+const SESSION_EXPIRY_BUFFER = 30 * 1000;
+const SESSION_FALLBACK_TTL = 60 * 60 * 1000;
 
 const MOVE_ICON_SVG = `
   <svg class="icon icon-move" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -138,6 +141,7 @@ const state = {
   currentUserId: null,
   isAuthenticated: false,
   authMode: "signIn",
+  authSession: null,
   data: createSeedData(),
   viewAnchors: createInitialAnchors(today),
   selectedDate: initialSelectedDate,
@@ -369,12 +373,19 @@ function loadAccountStore() {
         return;
       }
       const normalizedId = (id || "").toLowerCase();
+      const remoteId =
+        record && typeof record.remoteId === "string" && record.remoteId
+          ? record.remoteId
+          : record && typeof record.supabaseUserId === "string" && record.supabaseUserId
+          ? record.supabaseUserId
+          : normalizedId;
       users[normalizedId] = {
         id: normalizedId,
         email: record.email || normalizedId,
         passwordHash: record.passwordHash || "",
         createdAt: record.createdAt || null,
         lastLoginAt: record.lastLoginAt || null,
+        remoteId,
         sync: normalizeSyncSettings(record.sync),
       };
     });
@@ -404,28 +415,66 @@ function loadSession() {
       return null;
     }
     const parsed = JSON.parse(stored);
-    if (parsed && typeof parsed === "object" && parsed.userId) {
-      return parsed;
+    if (!parsed || typeof parsed !== "object" || !parsed.userId) {
+      return null;
     }
+    const normalizedId = normalizeEmail(parsed.userId);
+    return {
+      userId: normalizedId,
+      email: typeof parsed.email === "string" ? parsed.email : null,
+      remoteId: typeof parsed.remoteId === "string" ? parsed.remoteId : null,
+      accessToken: typeof parsed.accessToken === "string" ? parsed.accessToken : null,
+      refreshToken: typeof parsed.refreshToken === "string" ? parsed.refreshToken : null,
+      expiresAt: typeof parsed.expiresAt === "number" ? parsed.expiresAt : null,
+    };
   } catch (error) {
     console.warn("Failed to parse saved session", error);
   }
   return null;
 }
 
-function saveSession(userId) {
+function saveSession(userId, session = null) {
   if (!userId) {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
     return;
   }
   try {
-    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ userId }));
+    const normalizedId = normalizeEmail(userId);
+    const payload = {
+      userId: normalizedId,
+      email: session && session.email ? session.email : null,
+      remoteId: session && session.remoteId ? session.remoteId : null,
+      accessToken: session && session.accessToken ? session.accessToken : null,
+      refreshToken: session && session.refreshToken ? session.refreshToken : null,
+      expiresAt: session && typeof session.expiresAt === "number" ? session.expiresAt : null,
+    };
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload));
   } catch (error) {
     console.warn("Failed to persist session", error);
   }
 }
 
 function clearSession() {
+  state.authSession = null;
   localStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
+function setAuthSession(session) {
+  if (!session || !session.userId) {
+    clearSession();
+    return;
+  }
+  const normalizedId = normalizeEmail(session.userId);
+  const normalized = {
+    userId: normalizedId,
+    email: session.email || normalizedId,
+    remoteId: session.remoteId || null,
+    accessToken: session.accessToken || null,
+    refreshToken: session.refreshToken || null,
+    expiresAt: typeof session.expiresAt === "number" ? session.expiresAt : null,
+  };
+  state.authSession = normalized.accessToken ? normalized : null;
+  saveSession(normalizedId, normalized);
 }
 
 function getUserStorageKey(userId) {
@@ -728,8 +777,8 @@ function handleCloudSettingsSubmit(event) {
       account.sync = deriveAccountSyncSettings();
       saveAccountStore(state.accountStore);
       updateSyncStatus();
-      if (isSupabaseConfigured()) {
-        upsertRemoteAccount(account).catch((error) => {
+      if (isSupabaseConfigured() && state.authSession) {
+        upsertRemoteAccount(account, state.authSession).catch((error) => {
           console.warn("Failed to update remote account after cloud settings change", error);
         });
       }
@@ -830,6 +879,10 @@ function updateSyncStatus() {
     elements.syncStatus.textContent = "Local only";
     return;
   }
+  if (!state.authSession || !state.authSession.accessToken) {
+    elements.syncStatus.textContent = "Cloud auth required";
+    return;
+  }
   if (state.remoteSync.pending || state.remoteSync.pushTimer || state.remoteSync.inFlight) {
     elements.syncStatus.textContent = "Syncing…";
     return;
@@ -859,35 +912,244 @@ function getSupabaseAccountConfig() {
   return state.cloudSettings.supabase;
 }
 
-function createSupabaseHeaders(anonKey) {
-  return {
+function createSupabaseHeaders(anonKey, accessToken) {
+  const headers = {
     apikey: anonKey,
-    Authorization: `Bearer ${anonKey}`,
     Accept: "application/json",
+  };
+  headers.Authorization = `Bearer ${accessToken || anonKey}`;
+  return headers;
+}
+
+function parseSupabaseErrorMessage(status, payload) {
+  if (!payload) {
+    return `Supabase error ${status}`;
+  }
+  if (typeof payload === "string") {
+    return payload;
+  }
+  if (typeof payload.error_description === "string" && payload.error_description) {
+    return payload.error_description;
+  }
+  if (typeof payload.error === "string" && payload.error) {
+    return payload.error;
+  }
+  if (typeof payload.message === "string" && payload.message) {
+    return payload.message;
+  }
+  if (typeof payload.msg === "string" && payload.msg) {
+    return payload.msg;
+  }
+  return `Supabase error ${status}`;
+}
+
+async function readSupabaseResponse(response) {
+  const text = await response.text();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    return text;
+  }
+}
+
+function computeSessionExpiry(expiresIn) {
+  if (!Number.isFinite(expiresIn)) {
+    return Date.now() + SESSION_FALLBACK_TTL;
+  }
+  const buffer = Math.max(0, expiresIn * 1000 - SESSION_EXPIRY_BUFFER);
+  if (buffer <= 0) {
+    return Date.now() + SESSION_REFRESH_THRESHOLD;
+  }
+  return Date.now() + buffer;
+}
+
+function normalizeSupabaseSessionPayload(payload, fallbackEmail, previous = null) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  const user = payload.user && typeof payload.user === "object" ? payload.user : {};
+  const rawEmail =
+    (typeof user.email === "string" && user.email) ||
+    (typeof fallbackEmail === "string" && fallbackEmail) ||
+    (previous && previous.email) ||
+    null;
+  const normalizedEmail = rawEmail ? normalizeEmail(rawEmail) : previous ? previous.userId : null;
+  if (!normalizedEmail) {
+    return null;
+  }
+  const accessToken = typeof payload.access_token === "string" ? payload.access_token : null;
+  const refreshToken =
+    typeof payload.refresh_token === "string"
+      ? payload.refresh_token
+      : previous && typeof previous.refreshToken === "string"
+      ? previous.refreshToken
+      : null;
+  const expiresInRaw =
+    typeof payload.expires_in === "number"
+      ? payload.expires_in
+      : typeof payload.expires_in === "string"
+      ? Number.parseFloat(payload.expires_in)
+      : null;
+  const remoteId =
+    (typeof user.id === "string" && user.id) ||
+    (typeof user.sub === "string" && user.sub) ||
+    (previous && previous.remoteId) ||
+    null;
+  let expiresAt =
+    typeof expiresInRaw === "number" && Number.isFinite(expiresInRaw)
+      ? computeSessionExpiry(expiresInRaw)
+      : previous && typeof previous.expiresAt === "number"
+      ? previous.expiresAt
+      : null;
+  if (accessToken && !expiresAt) {
+    expiresAt = Date.now() + SESSION_FALLBACK_TTL;
+  }
+  return {
+    userId: normalizedEmail,
+    email: rawEmail || (previous && previous.email) || normalizedEmail,
+    remoteId,
+    accessToken,
+    refreshToken,
+    expiresAt,
   };
 }
 
-async function fetchRemoteAccount(email) {
+async function supabaseSignIn(email, password) {
   const supabase = getSupabaseAccountConfig();
   if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+  const baseUrl = sanitizeSupabaseUrl(supabase.url);
+  const target = `${baseUrl}/auth/v1/token?grant_type=password`;
+  const response = await fetch(target, {
+    method: "POST",
+    headers: {
+      apikey: supabase.anonKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, password }),
+  });
+  const payload = await readSupabaseResponse(response);
+  if (!response.ok) {
+    throw new Error(parseSupabaseErrorMessage(response.status, payload));
+  }
+  const session = normalizeSupabaseSessionPayload(payload, email);
+  if (!session || !session.accessToken) {
+    throw new Error("Supabase did not return an access token. Confirm your email and try again.");
+  }
+  return session;
+}
+
+async function supabaseSignUp(email, password) {
+  const supabase = getSupabaseAccountConfig();
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+  const baseUrl = sanitizeSupabaseUrl(supabase.url);
+  const target = `${baseUrl}/auth/v1/signup`;
+  const response = await fetch(target, {
+    method: "POST",
+    headers: {
+      apikey: supabase.anonKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, password }),
+  });
+  const payload = await readSupabaseResponse(response);
+  if (!response.ok) {
+    throw new Error(parseSupabaseErrorMessage(response.status, payload));
+  }
+  let session = normalizeSupabaseSessionPayload(payload, email);
+  if (!session || !session.accessToken) {
+    try {
+      session = await supabaseSignIn(email, password);
+    } catch (error) {
+      const message =
+        (payload && typeof payload === "object" && payload.message) ||
+        "Check your email to confirm the account before signing in.";
+      throw new Error(message);
+    }
+  }
+  return session;
+}
+
+async function refreshSupabaseSession(refreshToken, previous) {
+  const supabase = getSupabaseAccountConfig();
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+  if (!refreshToken) {
+    throw new Error("Missing refresh token");
+  }
+  const baseUrl = sanitizeSupabaseUrl(supabase.url);
+  const target = `${baseUrl}/auth/v1/token?grant_type=refresh_token`;
+  const response = await fetch(target, {
+    method: "POST",
+    headers: {
+      apikey: supabase.anonKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+  const payload = await readSupabaseResponse(response);
+  if (!response.ok) {
+    throw new Error(parseSupabaseErrorMessage(response.status, payload));
+  }
+  const session = normalizeSupabaseSessionPayload(payload, previous ? previous.email : null, previous);
+  if (!session || !session.accessToken) {
+    throw new Error("Unable to refresh Supabase session.");
+  }
+  return session;
+}
+
+async function ensureSupabaseSession() {
+  if (!state.authSession || !state.authSession.accessToken) {
+    return state.authSession || null;
+  }
+  if (!state.authSession.expiresAt) {
+    return state.authSession;
+  }
+  const now = Date.now();
+  if (state.authSession.expiresAt - now > SESSION_REFRESH_THRESHOLD) {
+    return state.authSession;
+  }
+  if (!state.authSession.refreshToken) {
+    return state.authSession;
+  }
+  try {
+    const refreshed = await refreshSupabaseSession(state.authSession.refreshToken, state.authSession);
+    state.authSession = refreshed;
+    saveSession(refreshed.userId, refreshed);
+    return refreshed;
+  } catch (error) {
+    console.warn("Failed to refresh Supabase session", error);
+    return state.authSession;
+  }
+}
+
+async function fetchRemoteAccount(session) {
+  const supabase = getSupabaseAccountConfig();
+  if (!supabase || !session || !session.remoteId) {
     return null;
   }
   const baseUrl = sanitizeSupabaseUrl(supabase.url);
-  const target = `${baseUrl}/rest/v1/${supabase.accountsTable}?select=email,password_hash,sync_settings,created_at,updated_at&email=eq.${encodeURIComponent(
-    email
+  const target = `${baseUrl}/rest/v1/${supabase.accountsTable}?select=user_id,email,password_hash,sync_settings,created_at,updated_at&user_id=eq.${encodeURIComponent(
+    session.remoteId
   )}`;
   const response = await fetch(target, {
-    headers: createSupabaseHeaders(supabase.anonKey),
+    headers: createSupabaseHeaders(supabase.anonKey, session.accessToken),
   });
+  const payload = await readSupabaseResponse(response);
   if (!response.ok) {
     if (response.status === 404) {
       return null;
     }
-    const message = await response.text();
-    throw new Error(message || `Supabase error ${response.status}`);
+    throw new Error(parseSupabaseErrorMessage(response.status, payload));
   }
-  const payload = await response.json();
-  if (!Array.isArray(payload) || payload.length === 0) {
+  if (!payload || !Array.isArray(payload) || payload.length === 0) {
     return null;
   }
   const record = payload[0];
@@ -904,7 +1166,7 @@ async function fetchRemoteAccount(email) {
       syncPayload = record.sync_settings;
     }
   }
-  const normalizedEmail = normalizeEmail(record.email || email);
+  const normalizedEmail = normalizeEmail(record.email || session.email || session.userId);
   const syncSettings = normalizeSyncSettings({
     enabled: true,
     provider: "supabase",
@@ -925,23 +1187,25 @@ async function fetchRemoteAccount(email) {
   });
   return {
     id: normalizedEmail,
-    email: record.email || normalizedEmail,
+    email: record.email || session.email || normalizedEmail,
     passwordHash: record.password_hash || "",
     createdAt: record.created_at || null,
     lastLoginAt: record.updated_at || null,
+    remoteId: record.user_id || session.remoteId,
     sync: syncSettings,
   };
 }
 
-async function upsertRemoteAccount(account) {
+async function upsertRemoteAccount(account, session) {
   const supabase = getSupabaseAccountConfig();
-  if (!supabase) {
+  if (!supabase || !session || !session.accessToken) {
     return;
   }
   const baseUrl = sanitizeSupabaseUrl(supabase.url);
   const target = `${baseUrl}/rest/v1/${supabase.accountsTable}`;
   const payload = {
-    email: account.id,
+    user_id: session.remoteId || account.remoteId || account.id,
+    email: account.email || account.id,
     password_hash: account.passwordHash,
     sync_settings: {
       enabled: account.sync.enabled,
@@ -955,15 +1219,15 @@ async function upsertRemoteAccount(account) {
   const response = await fetch(target, {
     method: "POST",
     headers: {
-      ...createSupabaseHeaders(supabase.anonKey),
+      ...createSupabaseHeaders(supabase.anonKey, session.accessToken),
       "Content-Type": "application/json",
       Prefer: "resolution=merge-duplicates",
     },
     body: JSON.stringify(payload),
   });
+  const result = await readSupabaseResponse(response);
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Supabase error ${response.status}`);
+    throw new Error(parseSupabaseErrorMessage(response.status, result));
   }
 }
 
@@ -1019,31 +1283,31 @@ function populateSyncSettings() {
   clearAuthError();
 }
 
-async function pullRemoteData(account) {
+async function pullRemoteData(account, session = null) {
   if (!isSyncEnabled(account)) {
     return null;
   }
+  const activeSession = session || (await ensureSupabaseSession());
+  if (!activeSession || !activeSession.accessToken) {
+    throw new Error("Supabase session required for syncing.");
+  }
   const supabase = account.sync.supabase || {};
+  const remoteId = account.remoteId || account.id;
   const baseUrl = sanitizeSupabaseUrl(supabase.url);
   const requestUrl = `${baseUrl}/rest/v1/${supabase.table}?select=user_id,data,updated_at&user_id=eq.${encodeURIComponent(
-    account.id
+    remoteId
   )}`;
   const response = await fetch(requestUrl, {
-    headers: {
-      apikey: supabase.anonKey,
-      Authorization: `Bearer ${supabase.anonKey}`,
-      Accept: "application/json",
-    },
+    headers: createSupabaseHeaders(supabase.anonKey, activeSession.accessToken),
   });
+  const payload = await readSupabaseResponse(response);
   if (!response.ok) {
     if (response.status === 404) {
       return null;
     }
-    const message = await response.text();
-    throw new Error(message || `Supabase error ${response.status}`);
+    throw new Error(parseSupabaseErrorMessage(response.status, payload));
   }
-  const payload = await response.json();
-  if (!Array.isArray(payload) || payload.length === 0) {
+  if (!payload || !Array.isArray(payload) || payload.length === 0) {
     return null;
   }
   const record = payload[0];
@@ -1062,39 +1326,37 @@ async function pullRemoteData(account) {
   };
 }
 
-async function pushRemoteData(account) {
+async function pushRemoteData(account, session = null) {
   if (!isSyncEnabled(account)) {
     return;
   }
+  const activeSession = session || (await ensureSupabaseSession());
+  if (!activeSession || !activeSession.accessToken) {
+    throw new Error("Supabase session required for syncing.");
+  }
   const supabase = account.sync.supabase || {};
+  const remoteId = account.remoteId || account.id;
   const baseUrl = sanitizeSupabaseUrl(supabase.url);
   const target = `${baseUrl}/rest/v1/${supabase.table}`;
   touchData(state.data);
   persistUserData(account.id, state.data, { skipTouch: true });
   const payload = {
-    user_id: account.id,
+    user_id: remoteId,
     data: state.data,
     updated_at: state.data.meta ? state.data.meta.updatedAt : new Date().toISOString(),
   };
   const response = await fetch(target, {
     method: "POST",
     headers: {
-      apikey: supabase.anonKey,
-      Authorization: `Bearer ${supabase.anonKey}`,
+      ...createSupabaseHeaders(supabase.anonKey, activeSession.accessToken),
       "Content-Type": "application/json",
       Prefer: "resolution=merge-duplicates,return=representation",
     },
     body: JSON.stringify(payload),
   });
+  const body = await readSupabaseResponse(response);
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Supabase error ${response.status}`);
-  }
-  let body = null;
-  try {
-    body = await response.json();
-  } catch (error) {
-    body = null;
+    throw new Error(parseSupabaseErrorMessage(response.status, body));
   }
   if (Array.isArray(body) && body[0] && body[0].updated_at) {
     state.remoteSync.lastSyncedAt = body[0].updated_at;
@@ -1131,7 +1393,11 @@ async function performSync(options = {}) {
       state.remoteSync.pending = true;
       state.remoteSync.lastError = null;
       updateSyncStatus();
-      const remote = await pullRemoteData(account);
+      const activeSession = await ensureSupabaseSession();
+      if (!activeSession || !activeSession.accessToken) {
+        throw new Error("Supabase session required for syncing.");
+      }
+      const remote = await pullRemoteData(account, activeSession);
       const localTimestamp = getDataTimestamp(state.data);
       let remoteTimestamp = null;
       if (remote && remote.data) {
@@ -1149,7 +1415,7 @@ async function performSync(options = {}) {
         !remoteTimestamp ||
         (localTimestamp && (!remoteTimestamp || localTimestamp >= remoteTimestamp));
       if (shouldPush) {
-        await pushRemoteData(account);
+        await pushRemoteData(account, activeSession);
       } else {
         state.remoteSync.pending = false;
         state.remoteSync.lastError = null;
@@ -1171,7 +1437,7 @@ async function performSync(options = {}) {
 }
 
 async function completeSignIn(userId, options = {}) {
-  const { skipSync = false } = options;
+  const { skipSync = false, session = null } = options;
   const normalizedId = normalizeEmail(userId);
   const account = state.accountStore.users[normalizedId];
   if (!account) {
@@ -1184,9 +1450,27 @@ async function completeSignIn(userId, options = {}) {
   resetRemoteSyncState();
   resetUiState(new Date());
   state.data = loadUserData(normalizedId);
+  if (session && session.remoteId) {
+    account.remoteId = session.remoteId;
+  } else if (!account.remoteId) {
+    account.remoteId = normalizedId;
+  }
   account.lastLoginAt = new Date().toISOString();
   saveAccountStore(state.accountStore);
-  saveSession(normalizedId);
+  if (session) {
+    const normalizedSession = {
+      userId: normalizedId,
+      email: account.email,
+      remoteId: account.remoteId,
+      accessToken: session.accessToken || null,
+      refreshToken: session.refreshToken || null,
+      expiresAt: session.expiresAt || null,
+    };
+    setAuthSession(normalizedSession);
+  } else {
+    state.authSession = null;
+    saveSession(normalizedId, null);
+  }
   hideAuthGate();
   clearAuthError();
   triggerSelectionGlow();
@@ -1223,50 +1507,66 @@ function handleSignOut() {
 async function handleSignIn(event) {
   event.preventDefault();
   clearAuthError();
-  const email = normalizeEmail(elements.signInEmail ? elements.signInEmail.value : "");
+  const emailInput = elements.signInEmail ? elements.signInEmail.value : "";
+  const email = normalizeEmail(emailInput);
   const password = elements.signInPassword ? elements.signInPassword.value : "";
   if (!email || !password) {
     setAuthError("Email and password are required.");
     return;
   }
-  let account = state.accountStore.users[email];
-  let remoteError = null;
+  const passwordHash = await hashPassword(password);
+  let account = state.accountStore.users[email] || null;
+  let session = null;
+
   if (isSupabaseConfigured()) {
     try {
-      const remoteAccount = await fetchRemoteAccount(email);
+      session = await supabaseSignIn(emailInput.trim() || email, password);
+    } catch (error) {
+      setAuthError(error.message || "Unable to sign in with Supabase.");
+      return;
+    }
+    try {
+      const remoteAccount = await fetchRemoteAccount(session);
       if (remoteAccount) {
+        remoteAccount.passwordHash = remoteAccount.passwordHash || passwordHash;
         remoteAccount.sync = normalizeSyncSettings(remoteAccount.sync);
-        state.accountStore.users[email] = remoteAccount;
-        saveAccountStore(state.accountStore);
-        account = remoteAccount;
+        account = { ...(account || {}), ...remoteAccount };
       }
     } catch (error) {
       console.warn("Failed to load remote account", error);
-      remoteError = error;
     }
   }
+
   if (!account) {
-    if (remoteError) {
-      setAuthError(`Unable to reach cloud account store: ${remoteError.message || String(remoteError)}`);
-    } else {
-      setAuthError("Account not found.");
-    }
+    account = state.accountStore.users[email] || null;
+  }
+
+  if (!account) {
+    setAuthError("Account not found.");
     return;
   }
-  const hash = await hashPassword(password);
-  if (hash !== account.passwordHash) {
+
+  if (!session && account.passwordHash !== passwordHash) {
     setAuthError("Incorrect password.");
     return;
   }
+
+  account.email = account.email || (emailInput.trim() || email);
+  account.passwordHash = passwordHash;
+  account.remoteId = session && session.remoteId ? session.remoteId : account.remoteId || email;
   account.sync = normalizeSyncSettings(account.sync);
   state.accountStore.users[email] = account;
   saveAccountStore(state.accountStore);
-  await completeSignIn(email);
-  if (isSupabaseConfigured()) {
-    upsertRemoteAccount(account).catch((error) => {
+
+  if (session) {
+    try {
+      await upsertRemoteAccount(account, session);
+    } catch (error) {
       console.warn("Failed to update remote account", error);
-    });
+    }
   }
+
+  await completeSignIn(email, { session, skipSync: !isSyncEnabled(account) });
   if (elements.signInForm) {
     elements.signInForm.reset();
   }
@@ -1300,6 +1600,15 @@ async function handleRegister(event) {
   }
   const passwordHash = await hashPassword(password);
   const syncSettings = deriveAccountSyncSettings();
+  let session = null;
+  if (isSupabaseConfigured()) {
+    try {
+      session = await supabaseSignUp(emailRaw.trim() || email, password);
+    } catch (error) {
+      setAuthError(error.message || "Unable to create cloud account.");
+      return;
+    }
+  }
   const record = {
     id: email,
     email: emailRaw.trim() || email,
@@ -1307,12 +1616,13 @@ async function handleRegister(event) {
     createdAt: new Date().toISOString(),
     lastLoginAt: null,
     sync: syncSettings,
+    remoteId: session && session.remoteId ? session.remoteId : email,
   };
   state.accountStore.users[email] = record;
   saveAccountStore(state.accountStore);
-  if (isSupabaseConfigured()) {
+  if (session) {
     try {
-      await upsertRemoteAccount(record);
+      await upsertRemoteAccount(record, session);
     } catch (error) {
       console.warn("Failed to persist remote account", error);
       delete state.accountStore.users[email];
@@ -1321,7 +1631,7 @@ async function handleRegister(event) {
       return;
     }
   }
-  await completeSignIn(email, { skipSync: !isSyncEnabled(record) });
+  await completeSignIn(email, { skipSync: !isSyncEnabled(record), session });
   if (elements.registerForm) {
     elements.registerForm.reset();
   }
@@ -1366,8 +1676,8 @@ function handleSyncSettingsSubmit(event) {
   }
   updateAccountBar();
   updateSyncStatus();
-  if (isSupabaseConfigured()) {
-    upsertRemoteAccount(account).catch((error) => {
+  if (isSupabaseConfigured() && state.authSession) {
+    upsertRemoteAccount(account, state.authSession).catch((error) => {
       console.warn("Failed to update remote account from sync settings", error);
     });
   }
@@ -3627,10 +3937,29 @@ async function init() {
   setAuthMode(state.authMode);
   updateAccountBar();
   updateSyncStatus();
-  const session = loadSession();
-  if (session && session.userId && state.accountStore.users[session.userId]) {
+  const storedSession = loadSession();
+  let restoredSession = null;
+  if (storedSession && storedSession.accessToken) {
+    restoredSession = {
+      userId: storedSession.userId,
+      email: storedSession.email || storedSession.userId,
+      remoteId:
+        storedSession.remoteId ||
+        (state.accountStore.users[storedSession.userId]
+          ? state.accountStore.users[storedSession.userId].remoteId
+          : null) ||
+        storedSession.userId,
+      accessToken: storedSession.accessToken,
+      refreshToken: storedSession.refreshToken,
+      expiresAt: storedSession.expiresAt,
+    };
+    state.authSession = restoredSession;
+  }
+  if (storedSession && storedSession.userId && state.accountStore.users[storedSession.userId]) {
     try {
-      await completeSignIn(session.userId);
+      await completeSignIn(storedSession.userId, {
+        session: restoredSession,
+      });
     } catch (error) {
       console.warn("Failed to restore session", error);
       handleSignOut();

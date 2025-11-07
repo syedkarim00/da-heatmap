@@ -4,7 +4,7 @@ A single-page web app for logging multi-checkpoint habits, capturing focus to-do
 
 ## Highlights
 
-- 🔐 **Supabase-backed accounts:** Configure your Supabase project once and sign in on any device to load the same habits, entries, and focus to-dos.
+- 🔐 **Supabase-backed accounts:** Configure your Supabase project once, authenticate through Supabase Auth, and sign in on any device to load the same habits, entries, and focus to-dos.
 - ☁️ **Optional Supabase sync:** Drop in your Supabase URL/key to keep data in sync across devices while retaining the offline-only default.
 - 🗓️ **Per-habit heatmaps:** Dense GitHub-style grids that flex per habit—weekly rows summarize a whole week while month and year layouts track individual days.
 - 🔁 **Customizable range:** Tap a habit label to pick a 7-day week, weekly goal grid, month, or year and the calendar instantly reflows with the right column count and cell size.
@@ -34,19 +34,51 @@ All information lives per-account in your browser. Provide Supabase credentials 
 The tracker runs entirely offline, but you can enable Supabase syncing to mirror progress across devices:
 
 1. Create a Supabase project and enable the REST API.
-2. Add an **accounts table** (default name: `tracker_accounts`) with columns:
-   - `email` (text, primary key)
-   - `password_hash` (text)
-   - `sync_settings` (jsonb)
-   - `created_at` (timestamp with time zone, default `now()`)
-   - `updated_at` (timestamp with time zone, default `now()`)
-3. Add a **profiles table** (default name: `tracker_profiles`) with columns:
-   - `user_id` (text, primary key)
-   - `data` (jsonb)
-   - `updated_at` (timestamp with time zone, default `now()`)
-4. Configure Row Level Security so the anon/service role key can read and upsert only the matching user record in each table.
-5. From the landing screen (or the account toolbar), open **Cloud setup** and paste your Supabase URL, key, and table names.
-6. After signing in, open **Sync settings** if you want to adjust per-account preferences or switch back to local-only mode.
+2. In the SQL editor, create an **accounts table** (default name: `tracker_accounts`) that links each row to the authenticated user:
+
+   ```sql
+   create table if not exists public.tracker_accounts (
+     user_id uuid primary key references auth.users(id) on delete cascade,
+     email text not null,
+     password_hash text not null,
+     sync_settings jsonb default '{}'::jsonb,
+     created_at timestamptz default now(),
+     updated_at timestamptz default now()
+   );
+   ```
+
+3. Create a **profiles table** (default name: `tracker_profiles`) that stores the habit data per account:
+
+   ```sql
+   create table if not exists public.tracker_profiles (
+     user_id uuid primary key references auth.users(id) on delete cascade,
+     data jsonb default '{}'::jsonb,
+     updated_at timestamptz default now()
+   );
+   ```
+
+4. Enable Row Level Security on both tables and allow the authenticated user to manage only their own rows:
+
+   ```sql
+   alter table public.tracker_accounts enable row level security;
+   alter table public.tracker_profiles enable row level security;
+
+   create policy "Users can manage their account row"
+     on public.tracker_accounts
+     for all
+     using (auth.uid() = user_id)
+     with check (auth.uid() = user_id);
+
+   create policy "Users can manage their profile row"
+     on public.tracker_profiles
+     for all
+     using (auth.uid() = user_id)
+     with check (auth.uid() = user_id);
+   ```
+
+5. (Optional) Disable email confirmations in Supabase Auth if you want new accounts to be usable immediately, or confirm the email address before signing in.
+6. From the landing screen (or the account toolbar), open **Cloud setup** and paste your Supabase URL, anon key, and table names.
+7. After signing in, open **Sync settings** if you want to adjust per-account preferences or switch back to local-only mode.
 
 Credentials are stored locally per account. If syncing fails, the app falls back to local data until the connection succeeds.
 
