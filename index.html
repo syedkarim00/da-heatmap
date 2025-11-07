@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#000000">
+    
+    <!-- optional but recommended favicon -->
+    <link rel="icon" href="icons/icon-192.png">
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Habit tracker</title>
@@ -391,5 +396,21 @@
     </dialog>
 
     <script type="module" src="app.js"></script>
+    <script type="module" src="app.js"></script>
+    <script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker
+        .register('./service-worker.js')
+        .then(function (registration) {
+          console.log('ServiceWorker registered with scope:', registration.scope);
+        })
+        .catch(function (error) {
+          console.log('ServiceWorker registration failed:', error);
+        });
+    });
+  }
+</script>
+
   </body>
 </html>
