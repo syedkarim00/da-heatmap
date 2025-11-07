@@ -6,6 +6,7 @@ A single-page web app for logging multi-checkpoint habits, capturing focus to-do
 
 - 🔐 **Supabase-backed accounts:** Authentication, password changes, and data sync run through the hosted Supabase project so any device signed in with your account loads the same tracker instantly.
 - 🔄 **Realtime sync:** Habit updates push to Supabase immediately and live changes stream over websockets, so logging on your phone updates the browser (and vice versa) within moments—no manual sync button required.
+- 📡 **Self-broadcasting updates:** Each sync emits a lightweight realtime ping so other signed-in devices refresh even if Postgres change events are slow to arrive.
 - 🗓️ **Per-habit heatmaps:** Dense GitHub-style grids that flex per habit—weekly rows summarize a whole week while month and year layouts track individual days.
 - 🔁 **Customizable range:** Tap a habit label to pick a 7-day week, weekly goal grid, month, or year and the calendar instantly reflows with the right column count and cell size.
 - 🎯 **Weekly goals:** Give weekly cells their own target (e.g., 3 gym visits) so the tint reflects how close you came to that goal.
@@ -77,6 +78,8 @@ The bundled Supabase project expects the following tables and Row Level Security
    ```
 
 5. (Optional) Disable email confirmations in Supabase Auth if you want new accounts to be usable immediately, or confirm the email address before signing in.
+
+> ℹ️ The tracker still listens for Supabase Postgres change feeds. Toggle **Realtime** for both tables (or run `alter publication supabase_realtime add table public.tracker_accounts;` and `alter publication supabase_realtime add table public.tracker_profiles;`) if you want database-originated events alongside the built-in client broadcasts.
 
 Credentials are stored locally per account and synchronized to Supabase. If syncing fails, the app falls back to local data until the connection succeeds.
 

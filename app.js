@@ -182,6 +182,8 @@ const state = {
     lastRemoteUpdate: null,
     lastRemoteCommit: null,
     shouldReconnect: false,
+    pendingBroadcast: null,
+    clientInstanceId: createUniqueId("client"),
   },
 };
 
@@ -717,37 +719,49 @@ async function subscribeToRealtimeChanges() {
   clearRealtimeReconnectTimer();
   state.remoteSync.realtimeRemoteId = remoteId;
   state.remoteSync.lastRemoteUpdate = null;
-  const filter = `user_id=eq.${remoteId}`;
-  const channel = client
-    .channel(`tracker-profiles-${remoteId}`)
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: SUPABASE_DATA_TABLE, filter },
-      (payload) => {
-        handleRealtimeChange(payload);
-      }
-    );
-  state.remoteSync.realtimeChannel = channel;
-  const { error } = await channel.subscribe((status) => {
-    if (channel !== state.remoteSync.realtimeChannel) {
-      return;
-    }
-    if (!state.remoteSync.shouldReconnect) {
-      return;
-    }
-    if (status === "SUBSCRIBED") {
-      performSync({ forcePush: false }).catch((syncError) => {
-        console.warn("Realtime resync failed", syncError);
-      });
-    }
-    if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-      scheduleRealtimeReconnect();
-    }
-    if (status === "CLOSED") {
-      scheduleRealtimeReconnect(4000);
-    }
+  const filter = remoteId ? `user_id=eq.${remoteId}` : null;
+  const channelName = `tracker-sync-${remoteId.replace(/[^a-z0-9-]/gi, "_")}`;
+  const channel = client.channel(channelName, {
+    config: {
+      broadcast: { ack: true },
+    },
   });
-  if (error) {
+  const changeConfig = { event: "*", schema: "public", table: SUPABASE_DATA_TABLE };
+  if (filter) {
+    changeConfig.filter = filter;
+  }
+  channel.on("postgres_changes", changeConfig, (payload) => {
+    handleRealtimeChange(payload);
+  });
+  channel.on("broadcast", { event: "tracker-update" }, (payload) => {
+    handleRealtimeBroadcast(payload);
+  });
+  state.remoteSync.realtimeChannel = channel;
+  try {
+    await channel.subscribe((status) => {
+      if (channel !== state.remoteSync.realtimeChannel) {
+        return;
+      }
+      if (status === "SUBSCRIBED") {
+        flushPendingRealtimeBroadcast();
+        if (state.remoteSync.shouldReconnect) {
+          performSync({ forcePush: false }).catch((syncError) => {
+            console.warn("Realtime resync failed", syncError);
+          });
+        }
+        return;
+      }
+      if (!state.remoteSync.shouldReconnect) {
+        return;
+      }
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        scheduleRealtimeReconnect();
+      }
+      if (status === "CLOSED") {
+        scheduleRealtimeReconnect(4000);
+      }
+    });
+  } catch (error) {
     scheduleRealtimeReconnect();
     if (state.remoteSync.realtimeChannel === channel) {
       state.remoteSync.realtimeChannel = null;
@@ -761,6 +775,11 @@ function handleRealtimeChange(payload) {
   if (!isSyncEnabled(account)) {
     return;
   }
+  const remoteId =
+    state.remoteSync.realtimeRemoteId || (account ? account.remoteId || account.id : null);
+  if (!remoteId) {
+    return;
+  }
   const commitIso = payload && typeof payload.commit_timestamp === "string" ? payload.commit_timestamp : null;
   const commitDate = commitIso ? new Date(commitIso) : null;
   const lastCommitDate = state.remoteSync.lastRemoteCommit ? new Date(state.remoteSync.lastRemoteCommit) : null;
@@ -768,6 +787,15 @@ function handleRealtimeChange(payload) {
     commitDate && (!lastCommitDate || Number.isNaN(lastCommitDate.getTime()) || commitDate > lastCommitDate);
 
   const newRecord = payload && payload.new ? payload.new : null;
+  const payloadRemoteId = newRecord && typeof newRecord.user_id === "string" ? newRecord.user_id : null;
+  const previousRemoteId =
+    payload && payload.old && typeof payload.old.user_id === "string" ? payload.old.user_id : null;
+  if (payloadRemoteId && payloadRemoteId !== remoteId) {
+    return;
+  }
+  if (!payloadRemoteId && previousRemoteId && previousRemoteId !== remoteId) {
+    return;
+  }
   const updatedAtIso = newRecord && newRecord.updated_at ? newRecord.updated_at : null;
   let remoteData = null;
   if (newRecord && newRecord.data) {
@@ -814,6 +842,112 @@ function safeJsonParse(value) {
     console.warn("Failed to parse realtime payload", error);
     return null;
   }
+}
+
+function handleRealtimeBroadcast(message) {
+  const account = getCurrentAccountRecord();
+  if (!isSyncEnabled(account)) {
+    return;
+  }
+  if (!message || typeof message !== "object") {
+    return;
+  }
+  const payload = message.payload && typeof message.payload === "object" ? message.payload : {};
+  if (payload.origin && payload.origin === state.remoteSync.clientInstanceId) {
+    return;
+  }
+  const targetRemoteId = account ? account.remoteId || account.id : null;
+  if (!targetRemoteId) {
+    return;
+  }
+  if (payload.remoteId && payload.remoteId !== targetRemoteId) {
+    return;
+  }
+  const commitIso = typeof payload.remoteCommit === "string" ? payload.remoteCommit : null;
+  const updatedIso = typeof payload.updatedAt === "string" ? payload.updatedAt : commitIso;
+  if (commitIso) {
+    updateRemoteMarker("lastRemoteCommit", commitIso);
+  }
+  if (updatedIso) {
+    updateRemoteMarker("lastRemoteUpdate", updatedIso);
+  }
+  performSync({ forcePush: false, preferRemote: true, remoteCommit: commitIso || updatedIso || null })
+    .then(() => {
+      render();
+      updateSyncStatus();
+    })
+    .catch((error) => {
+      console.warn("Realtime broadcast sync failed", error);
+    });
+}
+
+function queueRealtimeBroadcast(payload) {
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+  const channel = state.remoteSync.realtimeChannel;
+  if (!channel || channel.state !== "joined") {
+    state.remoteSync.pendingBroadcast = payload;
+    return;
+  }
+  try {
+    channel
+      .send({ type: "broadcast", event: "tracker-update", payload })
+      .then((status) => {
+        if (status !== "ok") {
+          console.warn("Realtime broadcast send failed", status);
+          state.remoteSync.pendingBroadcast = payload;
+          if (state.remoteSync.shouldReconnect) {
+            scheduleRealtimeReconnect();
+          }
+        }
+      })
+      .catch((error) => {
+        console.warn("Failed to send realtime broadcast", error);
+        state.remoteSync.pendingBroadcast = payload;
+        if (state.remoteSync.shouldReconnect) {
+          scheduleRealtimeReconnect();
+        }
+      });
+  } catch (error) {
+    console.warn("Failed to queue realtime broadcast", error);
+    state.remoteSync.pendingBroadcast = payload;
+    if (state.remoteSync.shouldReconnect) {
+      scheduleRealtimeReconnect();
+    }
+  }
+}
+
+function flushPendingRealtimeBroadcast() {
+  if (!state.remoteSync.pendingBroadcast) {
+    return;
+  }
+  const payload = state.remoteSync.pendingBroadcast;
+  state.remoteSync.pendingBroadcast = null;
+  queueRealtimeBroadcast(payload);
+}
+
+function notifyRealtimeUpdate(remoteCommitIso = null) {
+  const account = getCurrentAccountRecord();
+  if (!isSyncEnabled(account)) {
+    return;
+  }
+  const remoteId =
+    state.remoteSync.realtimeRemoteId || (account ? account.remoteId || account.id : null);
+  if (!remoteId) {
+    return;
+  }
+  const updatedAt =
+    (state.data && state.data.meta && state.data.meta.updatedAt) ||
+    remoteCommitIso ||
+    new Date().toISOString();
+  const payload = {
+    remoteId,
+    updatedAt,
+    remoteCommit: remoteCommitIso || updatedAt,
+    origin: state.remoteSync.clientInstanceId,
+  };
+  queueRealtimeBroadcast(payload);
 }
 
 function updateRemoteMarker(key, iso) {
@@ -881,6 +1015,7 @@ function resetRemoteSyncState() {
   state.remoteSync.lastRemoteUpdate = null;
   state.remoteSync.lastRemoteCommit = null;
   state.remoteSync.shouldReconnect = false;
+  state.remoteSync.pendingBroadcast = null;
 }
 
 function isSyncEnabled(account) {
@@ -1469,6 +1604,7 @@ async function pushRemoteData(account, session = null) {
   state.remoteSync.lastError = null;
   updateRemoteMarker("lastRemoteCommit", payload.updated_at);
   updateRemoteMarker("lastRemoteUpdate", state.remoteSync.lastSyncedAt);
+  notifyRealtimeUpdate(payload.updated_at);
   updateSyncStatus();
 }
 
