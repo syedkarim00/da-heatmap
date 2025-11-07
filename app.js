@@ -180,6 +180,7 @@ const state = {
     realtimeRemoteId: null,
     realtimeReconnectTimer: null,
     lastRemoteUpdate: null,
+    lastRemoteCommit: null,
     shouldReconnect: false,
   },
 };
@@ -760,6 +761,12 @@ function handleRealtimeChange(payload) {
   if (!isSyncEnabled(account)) {
     return;
   }
+  const commitIso = payload && typeof payload.commit_timestamp === "string" ? payload.commit_timestamp : null;
+  const commitDate = commitIso ? new Date(commitIso) : null;
+  const lastCommitDate = state.remoteSync.lastRemoteCommit ? new Date(state.remoteSync.lastRemoteCommit) : null;
+  const commitIsNewer =
+    commitDate && (!lastCommitDate || Number.isNaN(lastCommitDate.getTime()) || commitDate > lastCommitDate);
+
   const newRecord = payload && payload.new ? payload.new : null;
   const updatedAtIso = newRecord && newRecord.updated_at ? newRecord.updated_at : null;
   let remoteData = null;
@@ -768,23 +775,32 @@ function handleRealtimeChange(payload) {
   }
   const localTimestamp = getDataTimestamp(state.data);
   const remoteTimestamp = getDataTimestamp(remoteData) || (updatedAtIso ? new Date(updatedAtIso) : null);
-  if (remoteTimestamp && localTimestamp && remoteTimestamp <= localTimestamp) {
-    state.remoteSync.lastRemoteUpdate = updatedAtIso || null;
-    return;
-  }
-  if (remoteData && hasMeaningfulData(remoteData)) {
+  const canAdoptPayload =
+    remoteData &&
+    hasMeaningfulData(remoteData) &&
+    (!localTimestamp || (remoteTimestamp && localTimestamp && remoteTimestamp > localTimestamp) || commitIsNewer);
+
+  if (canAdoptPayload) {
     const normalized = migrateData(remoteData);
     state.data = normalized;
     persistUserData(account.id, state.data, { skipTouch: true });
-    state.remoteSync.lastRemoteUpdate = updatedAtIso || (remoteTimestamp ? remoteTimestamp.toISOString() : null);
+    const remoteIso = remoteTimestamp ? remoteTimestamp.toISOString() : updatedAtIso || null;
+    updateRemoteMarker("lastRemoteUpdate", remoteIso);
+    updateRemoteMarker("lastRemoteCommit", commitIso || remoteIso);
     render();
     updateSyncStatus();
     return;
   }
-  state.remoteSync.lastRemoteUpdate = updatedAtIso || null;
-  performSync({ forcePush: false })
+
+  if (commitIso && commitIsNewer) {
+    updateRemoteMarker("lastRemoteCommit", commitIso);
+  }
+  updateRemoteMarker("lastRemoteUpdate", updatedAtIso);
+
+  performSync({ forcePush: false, preferRemote: commitIsNewer, remoteCommit: commitIso || updatedAtIso || null })
     .then(() => {
       render();
+      updateSyncStatus();
     })
     .catch((error) => {
       console.warn("Realtime sync failed", error);
@@ -797,6 +813,26 @@ function safeJsonParse(value) {
   } catch (error) {
     console.warn("Failed to parse realtime payload", error);
     return null;
+  }
+}
+
+function updateRemoteMarker(key, iso) {
+  if (!iso || !state.remoteSync || !Object.prototype.hasOwnProperty.call(state.remoteSync, key)) {
+    return;
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return;
+  }
+  const normalizedIso = date.toISOString();
+  const existing = state.remoteSync[key];
+  if (!existing) {
+    state.remoteSync[key] = normalizedIso;
+    return;
+  }
+  const existingDate = new Date(existing);
+  if (Number.isNaN(existingDate.getTime()) || date > existingDate) {
+    state.remoteSync[key] = normalizedIso;
   }
 }
 
@@ -843,6 +879,7 @@ function resetRemoteSyncState() {
   state.remoteSync.lastSyncedAt = null;
   state.remoteSync.inFlight = null;
   state.remoteSync.lastRemoteUpdate = null;
+  state.remoteSync.lastRemoteCommit = null;
   state.remoteSync.shouldReconnect = false;
 }
 
@@ -1430,6 +1467,8 @@ async function pushRemoteData(account, session = null) {
   }
   state.remoteSync.pending = false;
   state.remoteSync.lastError = null;
+  updateRemoteMarker("lastRemoteCommit", payload.updated_at);
+  updateRemoteMarker("lastRemoteUpdate", state.remoteSync.lastSyncedAt);
   updateSyncStatus();
 }
 
@@ -1443,7 +1482,7 @@ function runSyncPromise(promise) {
 }
 
 async function performSync(options = {}) {
-  const { forcePush = false } = options;
+  const { forcePush = false, preferRemote = false, remoteCommit = null } = options;
   const account = getCurrentAccountRecord();
   if (!isSyncEnabled(account)) {
     updateSyncStatus();
@@ -1467,18 +1506,45 @@ async function performSync(options = {}) {
       let localHasContent = hasMeaningfulData(state.data);
       let remoteTimestamp = null;
       let remoteHasContent = false;
+      const commitDate = remoteCommit ? new Date(remoteCommit) : null;
+      const lastCommitDate = state.remoteSync.lastRemoteCommit
+        ? new Date(state.remoteSync.lastRemoteCommit)
+        : null;
+      const commitIsNewer =
+        commitDate && (!lastCommitDate || Number.isNaN(lastCommitDate.getTime()) || commitDate > lastCommitDate);
       if (remote && remote.data) {
         const normalized = migrateData(remote.data);
         remoteHasContent = hasMeaningfulData(normalized);
         remoteTimestamp = getDataTimestamp(normalized) || (remote.updatedAt ? new Date(remote.updatedAt) : null);
         const shouldAdoptRemote =
-          remoteHasContent && (!localHasContent || !localTimestamp || (remoteTimestamp && localTimestamp && remoteTimestamp > localTimestamp));
+          remoteHasContent &&
+          (preferRemote ||
+            commitIsNewer ||
+            !localHasContent ||
+            !localTimestamp ||
+            (remoteTimestamp && localTimestamp && remoteTimestamp > localTimestamp));
         if (shouldAdoptRemote) {
           state.data = normalized;
           persistUserData(account.id, state.data, { skipTouch: true });
           render();
           localTimestamp = getDataTimestamp(state.data);
           localHasContent = hasMeaningfulData(state.data);
+          const remoteIso = remoteTimestamp ? remoteTimestamp.toISOString() : remote && remote.updatedAt ? remote.updatedAt : null;
+          updateRemoteMarker("lastRemoteCommit", remoteCommit || remoteIso);
+          updateRemoteMarker("lastRemoteUpdate", remoteIso || remoteCommit);
+        } else {
+          if (remoteTimestamp) {
+            updateRemoteMarker("lastRemoteUpdate", remoteTimestamp.toISOString());
+          } else if (remote && remote.updatedAt) {
+            updateRemoteMarker("lastRemoteUpdate", remote.updatedAt);
+          }
+          if (commitIsNewer) {
+            updateRemoteMarker("lastRemoteCommit", remoteCommit);
+          } else if (remoteTimestamp) {
+            updateRemoteMarker("lastRemoteCommit", remoteTimestamp.toISOString());
+          } else if (remote && remote.updatedAt) {
+            updateRemoteMarker("lastRemoteCommit", remote.updatedAt);
+          }
         }
       }
       const shouldPush = (() => {
@@ -1504,6 +1570,9 @@ async function performSync(options = {}) {
       })();
       if (shouldPush) {
         await pushRemoteData(account, activeSession);
+        const pushedIso = state.data && state.data.meta ? state.data.meta.updatedAt : null;
+        updateRemoteMarker("lastRemoteCommit", pushedIso);
+        updateRemoteMarker("lastRemoteUpdate", state.remoteSync.lastSyncedAt || pushedIso);
       } else {
         state.remoteSync.pending = false;
         state.remoteSync.lastError = null;
@@ -1512,6 +1581,8 @@ async function performSync(options = {}) {
           : remote && remote.updatedAt
           ? remote.updatedAt
           : state.remoteSync.lastSyncedAt;
+        updateRemoteMarker("lastRemoteCommit", remoteCommit);
+        updateRemoteMarker("lastRemoteUpdate", state.remoteSync.lastSyncedAt);
         updateSyncStatus();
       }
     } catch (error) {
