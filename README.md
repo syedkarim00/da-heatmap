@@ -4,8 +4,8 @@ A single-page web app for logging multi-checkpoint habits, capturing focus to-do
 
 ## Highlights
 
-- 🔐 **Supabase-backed accounts:** Configure your Supabase project once, authenticate through Supabase Auth, and sign in on any device to load the same habits, entries, and focus to-dos.
-- ☁️ **Optional Supabase sync:** Drop in your Supabase URL/key to keep data in sync across devices while retaining the offline-only default.
+- 🔐 **Supabase-backed accounts:** Authentication, password changes, and data sync run through the hosted Supabase project so any device signed in with your account loads the same tracker instantly.
+- 🔄 **Always-on sync:** Habit updates push to Supabase immediately and every session polls for fresh data—log a habit on your phone and the browser reflects it automatically without a sync button.
 - 🗓️ **Per-habit heatmaps:** Dense GitHub-style grids that flex per habit—weekly rows summarize a whole week while month and year layouts track individual days.
 - 🔁 **Customizable range:** Tap a habit label to pick a 7-day week, weekly goal grid, month, or year and the calendar instantly reflows with the right column count and cell size.
 - 🎯 **Weekly goals:** Give weekly cells their own target (e.g., 3 gym visits) so the tint reflects how close you came to that goal.
@@ -18,20 +18,20 @@ A single-page web app for logging multi-checkpoint habits, capturing focus to-do
 - ↕️ **Drag-to-reorder heatmaps:** Grab the move handle beside each habit name to reshuffle rows whenever priorities change.
 - ✨ **Selectable-day glow:** The chosen day stays in sync across every view, gently fading after 10 seconds until you log again or pick a new date.
 - 🧭 **Daily checkpoint list:** Smash the glowing “Log habit” button to finish the day, or tick sub-habits individually for precision—now with a sidebar calendar to jump between dates.
+- 👤 **Quick account controls:** Hover the account chip to reveal your email, then open the menu to change your password or delete the account when it’s time to start fresh.
 
-All information lives per-account in your browser. Provide Supabase credentials to back everything up online and use the same tracker everywhere.
+All information lives per-account in Supabase and mirrors to local storage for resilience. The tracker is preconfigured to use the hosted project at `https://peuiedofnbmjodoeiknk.supabase.co`, so progress follows you automatically across devices once you sign in.
 
 ## Getting started
 
 1. Clone or download this repository.
 2. Open `index.html` in a modern browser. (For the best experience, serve it via a simple static server.)
-3. From the landing screen, choose **Configure cloud sync** and enter your Supabase project URL and key so accounts can sign in from any device. (Skip this step if you prefer to stay fully offline.)
-4. Create an account or sign back in to load your tracker.
-5. Build habits from the library panel and start logging checkpoints from the daily list.
+3. Create an account or sign back in to load your tracker.
+4. Build habits from the library panel and start logging checkpoints from the daily list.
 
-## Cloud setup
+## Supabase schema
 
-The tracker runs entirely offline, but you can enable Supabase syncing to mirror progress across devices:
+The bundled Supabase project expects the following tables and Row Level Security policies. If you are recreating the schema, run these statements in the SQL editor before using the tracker:
 
 1. Create a Supabase project and enable the REST API.
 2. In the SQL editor, create an **accounts table** (default name: `tracker_accounts`) that links each row to the authenticated user:
@@ -77,10 +77,13 @@ The tracker runs entirely offline, but you can enable Supabase syncing to mirror
    ```
 
 5. (Optional) Disable email confirmations in Supabase Auth if you want new accounts to be usable immediately, or confirm the email address before signing in.
-6. From the landing screen (or the account toolbar), open **Cloud setup** and paste your Supabase URL, anon key, and table names.
-7. After signing in, open **Sync settings** if you want to adjust per-account preferences or switch back to local-only mode.
 
-Credentials are stored locally per account. If syncing fails, the app falls back to local data until the connection succeeds.
+Credentials are stored locally per account and synchronized to Supabase. If syncing fails, the app falls back to local data until the connection succeeds.
+
+## Account menu
+
+- Hover the account chip in the header to preview the signed-in email.
+- Click the chip to open the account menu, change your password, or delete the account and all associated Supabase data.
 
 ## Keyboard and mouse tips
 

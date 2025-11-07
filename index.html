@@ -71,7 +71,6 @@
           <button type="submit" class="primary">Create account</button>
         </form>
         <p id="authError" class="auth-error" role="status"></p>
-        <button id="openCloudSettings" type="button" class="link-button">Configure cloud sync</button>
         <p class="auth-switch">
           <button id="showRegister" type="button">Need an account?</button>
           <button id="showSignIn" type="button" class="is-hidden">Have an account?</button>
@@ -82,15 +81,18 @@
     <div class="app-shell is-hidden" id="appShell">
       <header class="account-bar">
         <div class="account-info">
-          <strong id="accountEmail"></strong>
-          <span id="syncStatus" class="sync-status muted small"></span>
+          <button
+            id="accountChip"
+            type="button"
+            class="account-chip"
+            hidden
+            aria-haspopup="dialog"
+          >
+            <span id="accountChipInitial" class="account-chip-initial" aria-hidden="true"></span>
+            <span id="accountChipEmail" class="account-chip-email"></span>
+          </button>
         </div>
         <div class="account-actions">
-          <button id="headerCloudSettings" type="button" class="ghost small">Cloud setup</button>
-          <button id="syncNow" type="button" class="ghost small">Sync now</button>
-          <button id="openAccountSettings" type="button" class="ghost small">
-            Sync settings
-          </button>
           <button id="signOut" type="button" class="ghost small">Sign out</button>
         </div>
       </header>
@@ -311,91 +313,44 @@
       </form>
     </dialog>
 
-    <dialog id="cloudSettingsDialog" class="modal">
-      <form id="cloudSettingsForm" method="dialog" class="modal-content">
+    <dialog id="accountMenuDialog" class="modal">
+      <div class="modal-content account-menu">
         <header>
-          <h2>Cloud configuration</h2>
-          <p class="muted small">
-            Provide your Supabase project details so accounts and data stay in sync across devices.
-          </p>
+          <h2>Account</h2>
+          <p class="muted small">Update your password or delete your tracker data.</p>
         </header>
-        <label>
-          Supabase URL
-          <input type="url" id="cloudSupabaseUrl" placeholder="https://your-project.supabase.co" />
-        </label>
-        <label>
-          Service role key or anon key
-          <input type="text" id="cloudSupabaseAnonKey" placeholder="supabase service role or anon key" />
-        </label>
-        <label>
-          Accounts table
-          <input type="text" id="cloudSupabaseAccountsTable" placeholder="tracker_accounts" />
-        </label>
-        <label>
-          Data table
-          <input type="text" id="cloudSupabaseDataTable" placeholder="tracker_profiles" />
-        </label>
-        <p class="muted small">
-          The accounts table must include <code>email</code> (text, primary key), <code>password_hash</code> (text), and
-          <code>sync_settings</code> (jsonb).
-        </p>
-        <p id="cloudSettingsError" class="auth-error" role="status"></p>
+        <section class="account-menu-section">
+          <h3>Change password</h3>
+          <form id="changePasswordForm" class="account-menu-form" autocomplete="off">
+            <label for="changePasswordNew">
+              New password
+              <input type="password" id="changePasswordNew" minlength="8" required autocomplete="new-password" />
+            </label>
+            <label for="changePasswordConfirm">
+              Confirm password
+              <input type="password" id="changePasswordConfirm" minlength="8" required autocomplete="new-password" />
+            </label>
+            <p id="changePasswordError" class="auth-error" role="status"></p>
+            <p id="changePasswordSuccess" class="auth-success" role="status"></p>
+            <footer class="modal-actions compact">
+              <button type="submit" class="primary">Update password</button>
+            </footer>
+          </form>
+        </section>
+        <section class="account-menu-section">
+          <h3>Delete account</h3>
+          <p class="muted small">
+            This removes your habits everywhere and signs you out immediately.
+          </p>
+          <p id="accountMenuError" class="auth-error" role="status"></p>
+          <button id="deleteAccountButton" type="button" class="ghost danger">Delete account</button>
+        </section>
         <footer class="modal-actions">
-          <button type="button" id="cloudSettingsCancel" class="ghost">Cancel</button>
-          <button type="submit" class="primary">Save</button>
+          <button type="button" id="accountMenuClose" class="ghost">Close</button>
         </footer>
-      </form>
+      </div>
     </dialog>
 
-    <dialog id="accountSettingsDialog" class="modal">
-      <form id="accountSettingsForm" method="dialog" class="modal-content">
-        <header>
-          <h2>Sync settings</h2>
-          <p class="muted small">
-            Configure an optional Supabase project to sync your tracker across devices.
-          </p>
-        </header>
-        <label class="toggle">
-          <input type="checkbox" id="syncEnabled" /> Enable cloud sync
-        </label>
-        <label>
-          Provider
-          <select id="syncProvider">
-            <option value="local">Local only</option>
-            <option value="supabase">Supabase</option>
-          </select>
-        </label>
-        <div id="supabaseFields" class="provider-fields">
-          <label>
-            Supabase URL
-            <input type="url" id="syncSupabaseUrl" placeholder="https://your-project.supabase.co" />
-          </label>
-          <label>
-            Service role key or anon key
-            <input
-              type="text"
-              id="syncSupabaseAnonKey"
-              placeholder="supabase service role or anon key"
-            />
-          </label>
-          <label>
-            Table name
-            <input type="text" id="syncSupabaseTable" placeholder="tracker_profiles" />
-          </label>
-          <p class="muted small">
-            The table must include <code>user_id</code> (text, primary key) and <code>data</code> (jsonb) columns with
-            Row Level Security configured for your key.
-          </p>
-        </div>
-        <p id="syncSettingsError" class="auth-error" role="status"></p>
-        <footer class="modal-actions">
-          <button type="button" id="syncSettingsCancel" class="ghost">Cancel</button>
-          <button type="submit" class="primary">Save</button>
-        </footer>
-      </form>
-    </dialog>
-
-    <script type="module" src="app.js"></script>
     <script type="module" src="app.js"></script>
     <script>
   if ('serviceWorker' in navigator) {

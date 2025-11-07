@@ -3,21 +3,29 @@ const LEGACY_STORAGE_KEYS = ["lod-tracker-data-v2"];
 const ACCOUNT_STORAGE_KEY = "habit-tracker-accounts";
 const CLOUD_SETTINGS_KEY = "habit-tracker-cloud-settings";
 const SESSION_STORAGE_KEY = "habit-tracker-session";
+
+const SUPABASE_URL = "https://peuiedofnbmjodoeiknk.supabase.co";
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBldWllZG9mbmJtam9kb2Vpa25rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIzOTE3OTUsImV4cCI6MjA3Nzk2Nzc5NX0.-lcNxCD7ceVnSfIp49_TF2iMKLpsyfbQssv774Eh72w";
+const SUPABASE_ACCOUNTS_TABLE = "tracker_accounts";
+const SUPABASE_DATA_TABLE = "tracker_profiles";
+const REMOTE_SYNC_POLL_INTERVAL = 5000;
+
 const DEFAULT_SYNC_SETTINGS = {
-  enabled: false,
-  provider: "local",
+  enabled: true,
+  provider: "supabase",
   supabase: {
-    url: "",
-    anonKey: "",
-    table: "tracker_profiles",
+    url: SUPABASE_URL,
+    anonKey: SUPABASE_ANON_KEY,
+    table: SUPABASE_DATA_TABLE,
   },
 };
 const DEFAULT_CLOUD_SETTINGS = {
   supabase: {
-    url: "https://peuiedofnbmjodoeiknk.supabase.co",
-    anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBldWllZG9mbmJtam9kb2Vpa25rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIzOTE3OTUsImV4cCI6MjA3Nzk2Nzc5NX0.-lcNxCD7ceVnSfIp49_TF2iMKLpsyfbQssv774Eh72w",
-    accountsTable: "tracker_accounts",
-    dataTable: "tracker_profiles",
+    url: SUPABASE_URL,
+    anonKey: SUPABASE_ANON_KEY,
+    accountsTable: SUPABASE_ACCOUNTS_TABLE,
+    dataTable: SUPABASE_DATA_TABLE,
   },
 };
 
@@ -166,6 +174,7 @@ const state = {
     lastError: null,
     pushTimer: null,
     inFlight: null,
+    pollTimer: null,
   },
 };
 
@@ -188,21 +197,20 @@ const elements = {
   showSignIn: document.getElementById("showSignIn"),
   authError: document.getElementById("authError"),
   authSubtitle: document.getElementById("authSubtitle"),
-  accountEmail: document.getElementById("accountEmail"),
+  accountChip: document.getElementById("accountChip"),
+  accountChipInitial: document.getElementById("accountChipInitial"),
+  accountChipEmail: document.getElementById("accountChipEmail"),
   syncStatus: document.getElementById("syncStatus"),
-  syncNow: document.getElementById("syncNow"),
-  openAccountSettings: document.getElementById("openAccountSettings"),
   signOut: document.getElementById("signOut"),
-  accountSettingsDialog: document.getElementById("accountSettingsDialog"),
-  accountSettingsForm: document.getElementById("accountSettingsForm"),
-  syncEnabled: document.getElementById("syncEnabled"),
-  syncProvider: document.getElementById("syncProvider"),
-  supabaseFields: document.getElementById("supabaseFields"),
-  syncSupabaseUrl: document.getElementById("syncSupabaseUrl"),
-  syncSupabaseAnonKey: document.getElementById("syncSupabaseAnonKey"),
-  syncSupabaseTable: document.getElementById("syncSupabaseTable"),
-  syncSettingsError: document.getElementById("syncSettingsError"),
-  syncSettingsCancel: document.getElementById("syncSettingsCancel"),
+  accountMenuDialog: document.getElementById("accountMenuDialog"),
+  accountMenuClose: document.getElementById("accountMenuClose"),
+  changePasswordForm: document.getElementById("changePasswordForm"),
+  changePasswordNew: document.getElementById("changePasswordNew"),
+  changePasswordConfirm: document.getElementById("changePasswordConfirm"),
+  changePasswordError: document.getElementById("changePasswordError"),
+  changePasswordSuccess: document.getElementById("changePasswordSuccess"),
+  deleteAccountButton: document.getElementById("deleteAccountButton"),
+  accountMenuError: document.getElementById("accountMenuError"),
   monthLabel: document.getElementById("monthLabel"),
   prevMonth: document.getElementById("prevMonth"),
   nextMonth: document.getElementById("nextMonth"),
@@ -237,16 +245,6 @@ const elements = {
   heatmapSettingsTitle: document.getElementById("heatmapSettingsTitle"),
   heatmapWeeklyTargetRow: document.getElementById("heatmapWeeklyTargetRow"),
   heatmapWeeklyTarget: document.getElementById("heatmapWeeklyTarget"),
-  openCloudSettings: document.getElementById("openCloudSettings"),
-  headerCloudSettings: document.getElementById("headerCloudSettings"),
-  cloudSettingsDialog: document.getElementById("cloudSettingsDialog"),
-  cloudSettingsForm: document.getElementById("cloudSettingsForm"),
-  cloudSettingsCancel: document.getElementById("cloudSettingsCancel"),
-  cloudSettingsError: document.getElementById("cloudSettingsError"),
-  cloudSupabaseUrl: document.getElementById("cloudSupabaseUrl"),
-  cloudSupabaseAnonKey: document.getElementById("cloudSupabaseAnonKey"),
-  cloudSupabaseAccountsTable: document.getElementById("cloudSupabaseAccountsTable"),
-  cloudSupabaseDataTable: document.getElementById("cloudSupabaseDataTable"),
 };
 
 function cloneCloudSettings() {
@@ -255,46 +253,24 @@ function cloneCloudSettings() {
   };
 }
 
-function normalizeCloudSettings(settings) {
-  const base = cloneCloudSettings();
-  if (!settings || typeof settings !== "object") {
-    return base;
-  }
-  const supabase = settings.supabase && typeof settings.supabase === "object" ? settings.supabase : {};
-  base.supabase = {
-    url: typeof supabase.url === "string" ? supabase.url.trim() : "",
-    anonKey: typeof supabase.anonKey === "string" ? supabase.anonKey.trim() : "",
-    accountsTable:
-      typeof supabase.accountsTable === "string" && supabase.accountsTable.trim() !== ""
-        ? supabase.accountsTable.trim()
-        : DEFAULT_CLOUD_SETTINGS.supabase.accountsTable,
-    dataTable:
-      typeof supabase.dataTable === "string" && supabase.dataTable.trim() !== ""
-        ? supabase.dataTable.trim()
-        : DEFAULT_CLOUD_SETTINGS.supabase.dataTable,
-  };
-  return base;
+function normalizeCloudSettings() {
+  return cloneCloudSettings();
 }
 
 function loadCloudSettings() {
   try {
-    const stored = localStorage.getItem(CLOUD_SETTINGS_KEY);
-    if (!stored) {
-      return cloneCloudSettings();
-    }
-    const parsed = JSON.parse(stored);
-    return normalizeCloudSettings(parsed);
+    localStorage.removeItem(CLOUD_SETTINGS_KEY);
   } catch (error) {
-    console.warn("Failed to parse cloud settings", error);
-    return cloneCloudSettings();
+    console.warn("Failed to clear stored cloud settings", error);
   }
+  return cloneCloudSettings();
 }
 
-function saveCloudSettings(settings) {
+function saveCloudSettings() {
   try {
-    localStorage.setItem(CLOUD_SETTINGS_KEY, JSON.stringify(normalizeCloudSettings(settings)));
+    localStorage.removeItem(CLOUD_SETTINGS_KEY);
   } catch (error) {
-    console.warn("Failed to persist cloud settings", error);
+    console.warn("Failed to clear stored cloud settings", error);
   }
 }
 
@@ -307,19 +283,7 @@ function cloneDefaultSyncSettings() {
 }
 
 function deriveAccountSyncSettings() {
-  const supabase = state.cloudSettings && state.cloudSettings.supabase ? state.cloudSettings.supabase : null;
-  if (!supabase || !supabase.url || !supabase.anonKey || !supabase.dataTable) {
-    return cloneDefaultSyncSettings();
-  }
-  return normalizeSyncSettings({
-    enabled: true,
-    provider: "supabase",
-    supabase: {
-      url: supabase.url,
-      anonKey: supabase.anonKey,
-      table: supabase.dataTable || DEFAULT_SYNC_SETTINGS.supabase.table,
-    },
-  });
+  return cloneDefaultSyncSettings();
 }
 
 function isSupabaseConfigured(settings = state.cloudSettings) {
@@ -331,30 +295,7 @@ function isSupabaseConfigured(settings = state.cloudSettings) {
 }
 
 function normalizeSyncSettings(sync) {
-  const base = cloneDefaultSyncSettings();
-  if (!sync || typeof sync !== "object") {
-    return base;
-  }
-  const provider = sync.provider === "supabase" ? "supabase" : "local";
-  const normalized = {
-    enabled: provider === "supabase" && Boolean(sync.enabled),
-    provider,
-    supabase: {
-      url: sync.supabase && typeof sync.supabase.url === "string" ? sync.supabase.url : base.supabase.url,
-      anonKey:
-        sync.supabase && typeof sync.supabase.anonKey === "string"
-          ? sync.supabase.anonKey
-          : base.supabase.anonKey,
-      table:
-        sync.supabase && typeof sync.supabase.table === "string" && sync.supabase.table.trim() !== ""
-          ? sync.supabase.table
-          : base.supabase.table,
-    },
-  };
-  if (normalized.provider !== "supabase") {
-    normalized.enabled = false;
-  }
-  return normalized;
+  return cloneDefaultSyncSettings();
 }
 
 function loadAccountStore() {
@@ -606,6 +547,26 @@ function scheduleRemotePush() {
   }, REMOTE_PUSH_DEBOUNCE);
 }
 
+function stopRemoteSyncPolling() {
+  if (state.remoteSync.pollTimer) {
+    clearInterval(state.remoteSync.pollTimer);
+    state.remoteSync.pollTimer = null;
+  }
+}
+
+function startRemoteSyncPolling() {
+  stopRemoteSyncPolling();
+  const account = getCurrentAccountRecord();
+  if (!account || !isSyncEnabled(account)) {
+    return;
+  }
+  state.remoteSync.pollTimer = setInterval(() => {
+    performSync({ forcePush: false }).catch((error) => {
+      console.warn("Remote sync poll failed", error);
+    });
+  }, REMOTE_SYNC_POLL_INTERVAL);
+}
+
 async function hashPassword(password) {
   if (typeof password !== "string") {
     return "";
@@ -643,6 +604,7 @@ function getCurrentAccountRecord() {
 
 function resetRemoteSyncState() {
   cancelRemotePush();
+  stopRemoteSyncPolling();
   state.remoteSync.pending = false;
   state.remoteSync.lastError = null;
   state.remoteSync.lastSyncedAt = null;
@@ -684,15 +646,9 @@ function updateAuthSubtitle() {
     return;
   }
   const isRegister = state.authMode === "register";
-  if (isSupabaseConfigured()) {
-    elements.authSubtitle.textContent = isRegister
-      ? "Create an account to start tracking everywhere."
-      : "Sign in to access your habits on any device.";
-    return;
-  }
   elements.authSubtitle.textContent = isRegister
-    ? "Create an account to start tracking locally."
-    : "Sign in (set up cloud sync to use multiple devices).";
+    ? "Create an account to start tracking everywhere."
+    : "Sign in to access your habits on any device.";
 }
 
 function setAuthError(message) {
@@ -705,95 +661,6 @@ function clearAuthError() {
   if (elements.authError) {
     elements.authError.textContent = "";
   }
-  if (elements.syncSettingsError) {
-    elements.syncSettingsError.textContent = "";
-  }
-  if (elements.cloudSettingsError) {
-    elements.cloudSettingsError.textContent = "";
-  }
-}
-
-function populateCloudSettingsForm() {
-  const settings = normalizeCloudSettings(state.cloudSettings);
-  if (elements.cloudSupabaseUrl) {
-    elements.cloudSupabaseUrl.value = settings.supabase.url || "";
-  }
-  if (elements.cloudSupabaseAnonKey) {
-    elements.cloudSupabaseAnonKey.value = settings.supabase.anonKey || "";
-  }
-  if (elements.cloudSupabaseAccountsTable) {
-    elements.cloudSupabaseAccountsTable.value = settings.supabase.accountsTable || DEFAULT_CLOUD_SETTINGS.supabase.accountsTable;
-  }
-  if (elements.cloudSupabaseDataTable) {
-    elements.cloudSupabaseDataTable.value = settings.supabase.dataTable || DEFAULT_CLOUD_SETTINGS.supabase.dataTable;
-  }
-  if (elements.cloudSettingsError) {
-    elements.cloudSettingsError.textContent = "";
-  }
-}
-
-function openCloudSettingsDialog() {
-  if (!elements.cloudSettingsDialog) {
-    return;
-  }
-  populateCloudSettingsForm();
-  elements.cloudSettingsDialog.showModal();
-}
-
-function closeCloudSettingsDialog() {
-  if (!elements.cloudSettingsDialog) {
-    return;
-  }
-  elements.cloudSettingsDialog.close();
-  if (elements.cloudSettingsError) {
-    elements.cloudSettingsError.textContent = "";
-  }
-}
-
-function handleCloudSettingsSubmit(event) {
-  event.preventDefault();
-  const nextSettings = normalizeCloudSettings({
-    supabase: {
-      url: elements.cloudSupabaseUrl ? elements.cloudSupabaseUrl.value : "",
-      anonKey: elements.cloudSupabaseAnonKey ? elements.cloudSupabaseAnonKey.value : "",
-      accountsTable: elements.cloudSupabaseAccountsTable ? elements.cloudSupabaseAccountsTable.value : DEFAULT_CLOUD_SETTINGS.supabase.accountsTable,
-      dataTable: elements.cloudSupabaseDataTable ? elements.cloudSupabaseDataTable.value : DEFAULT_CLOUD_SETTINGS.supabase.dataTable,
-    },
-  });
-  const hasUrl = Boolean(nextSettings.supabase.url);
-  const hasKey = Boolean(nextSettings.supabase.anonKey);
-  if (hasUrl !== hasKey) {
-    if (elements.cloudSettingsError) {
-      elements.cloudSettingsError.textContent = "Provide both the Supabase URL and key to enable cloud sync, or leave both blank to stay offline.";
-    }
-    return;
-  }
-  state.cloudSettings = nextSettings;
-  saveCloudSettings(nextSettings);
-  updateAuthSubtitle();
-  if (state.isAuthenticated) {
-    const account = getCurrentAccountRecord();
-    if (account) {
-      account.sync = deriveAccountSyncSettings();
-      saveAccountStore(state.accountStore);
-      updateSyncStatus();
-      if (isSupabaseConfigured() && state.authSession) {
-        upsertRemoteAccount(account, state.authSession).catch((error) => {
-          console.warn("Failed to update remote account after cloud settings change", error);
-        });
-      }
-      if (isSyncEnabled(account)) {
-        performSync({ forcePush: true })
-          .then(() => {
-            render();
-          })
-          .catch((error) => {
-            console.warn("Failed to sync after cloud settings update", error);
-          });
-      }
-    }
-  }
-  closeCloudSettingsDialog();
 }
 
 function showAuthGate() {
@@ -831,13 +698,24 @@ function resetUiState(referenceDate = new Date()) {
 
 function updateAccountBar() {
   const account = getCurrentAccountRecord();
-  if (elements.accountEmail) {
-    elements.accountEmail.textContent = account ? account.email : "";
-  }
-  const syncAvailable = account ? isSyncEnabled(account) : false;
-  if (elements.syncNow) {
-    elements.syncNow.disabled = !syncAvailable;
-    elements.syncNow.setAttribute("aria-disabled", syncAvailable ? "false" : "true");
+  if (elements.accountChip) {
+    if (account) {
+      elements.accountChip.removeAttribute("hidden");
+      const email = account.email || account.id || "";
+      const initial = email ? email.charAt(0).toUpperCase() : "?";
+      if (elements.accountChipInitial) {
+        elements.accountChipInitial.textContent = initial;
+      }
+      if (elements.accountChipEmail) {
+        elements.accountChipEmail.textContent = email;
+      }
+      elements.accountChip.setAttribute(
+        "aria-label",
+        email ? `Manage account for ${email}` : "Manage account"
+      );
+    } else {
+      elements.accountChip.setAttribute("hidden", "hidden");
+    }
   }
 }
 
@@ -1232,57 +1110,6 @@ async function upsertRemoteAccount(account, session) {
 }
 
 
-function validateSupabaseConfig(config) {
-  if (!config || config.provider !== "supabase" || !config.enabled) {
-    return null;
-  }
-  if (!config.supabase || !config.supabase.url) {
-    return "Supabase URL is required.";
-  }
-  if (!config.supabase.anonKey) {
-    return "Supabase anon or service role key is required.";
-  }
-  if (!config.supabase.table) {
-    return "Supabase table name is required.";
-  }
-  return null;
-}
-
-function applySyncProviderVisibility(provider) {
-  const isSupabase = provider === "supabase";
-  if (elements.syncEnabled) {
-    elements.syncEnabled.disabled = !isSupabase;
-    if (!isSupabase) {
-      elements.syncEnabled.checked = false;
-    }
-  }
-  if (elements.supabaseFields) {
-    elements.supabaseFields.classList.toggle("is-hidden", !isSupabase);
-  }
-}
-
-function populateSyncSettings() {
-  const account = getCurrentAccountRecord();
-  const sync = account ? normalizeSyncSettings(account.sync) : cloneDefaultSyncSettings();
-  if (elements.syncProvider) {
-    elements.syncProvider.value = sync.provider;
-  }
-  if (elements.syncEnabled) {
-    elements.syncEnabled.checked = Boolean(sync.enabled && sync.provider === "supabase");
-  }
-  if (elements.syncSupabaseUrl) {
-    elements.syncSupabaseUrl.value = sync.supabase.url || "";
-  }
-  if (elements.syncSupabaseAnonKey) {
-    elements.syncSupabaseAnonKey.value = sync.supabase.anonKey || "";
-  }
-  if (elements.syncSupabaseTable) {
-    elements.syncSupabaseTable.value = sync.supabase.table || DEFAULT_SYNC_SETTINGS.supabase.table;
-  }
-  applySyncProviderVisibility(sync.provider);
-  clearAuthError();
-}
-
 async function pullRemoteData(account, session = null) {
   if (!isSyncEnabled(account)) {
     return null;
@@ -1485,12 +1312,16 @@ async function completeSignIn(userId, options = {}) {
       console.warn("Initial sync failed", error);
     }
   }
+  if (isSyncEnabled(account)) {
+    startRemoteSyncPolling();
+  }
 }
 
 function handleSignOut() {
   if (!state.isAuthenticated) {
     return;
   }
+  closeAccountMenu();
   clearSession();
   resetRemoteSyncState();
   stopLegendAnimation();
@@ -1502,6 +1333,194 @@ function handleSignOut() {
   showAuthGate();
   updateAccountBar();
   updateSyncStatus();
+}
+
+function resetAccountMenuFeedback() {
+  if (elements.changePasswordError) {
+    elements.changePasswordError.textContent = "";
+  }
+  if (elements.changePasswordSuccess) {
+    elements.changePasswordSuccess.textContent = "";
+  }
+  if (elements.accountMenuError) {
+    elements.accountMenuError.textContent = "";
+  }
+}
+
+function openAccountMenu() {
+  if (!elements.accountMenuDialog) {
+    return;
+  }
+  resetAccountMenuFeedback();
+  if (elements.changePasswordForm) {
+    elements.changePasswordForm.reset();
+  }
+  elements.accountMenuDialog.showModal();
+}
+
+function closeAccountMenu() {
+  if (!elements.accountMenuDialog) {
+    return;
+  }
+  elements.accountMenuDialog.close();
+}
+
+async function handleChangePasswordSubmit(event) {
+  event.preventDefault();
+  resetAccountMenuFeedback();
+  const account = getCurrentAccountRecord();
+  if (!account) {
+    if (elements.changePasswordError) {
+      elements.changePasswordError.textContent = "No account is currently active.";
+    }
+    return;
+  }
+  const newPassword = elements.changePasswordNew ? elements.changePasswordNew.value : "";
+  const confirmPassword = elements.changePasswordConfirm ? elements.changePasswordConfirm.value : "";
+  if (!newPassword || newPassword.length < MIN_PASSWORD_LENGTH) {
+    if (elements.changePasswordError) {
+      elements.changePasswordError.textContent = `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
+    }
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    if (elements.changePasswordError) {
+      elements.changePasswordError.textContent = "Passwords do not match.";
+    }
+    return;
+  }
+  const submitButton = elements.changePasswordForm
+    ? elements.changePasswordForm.querySelector('button[type="submit"]')
+    : null;
+  if (submitButton) {
+    submitButton.disabled = true;
+  }
+  try {
+    const session = await ensureSupabaseSession();
+    if (!session || !session.accessToken) {
+      throw new Error("Sign in again to update your password.");
+    }
+    const supabase = getSupabaseAccountConfig();
+    if (!supabase) {
+      throw new Error("Supabase is not configured.");
+    }
+    const baseUrl = sanitizeSupabaseUrl(supabase.url);
+    const target = `${baseUrl}/auth/v1/user`;
+    const response = await fetch(target, {
+      method: "PATCH",
+      headers: {
+        ...createSupabaseHeaders(supabase.anonKey, session.accessToken),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ password: newPassword }),
+    });
+    const payload = await readSupabaseResponse(response);
+    if (!response.ok) {
+      throw new Error(parseSupabaseErrorMessage(response.status, payload));
+    }
+    const passwordHash = await hashPassword(newPassword);
+    account.passwordHash = passwordHash;
+    saveAccountStore(state.accountStore);
+    if (elements.changePasswordForm) {
+      elements.changePasswordForm.reset();
+    }
+    if (elements.changePasswordSuccess) {
+      elements.changePasswordSuccess.textContent = "Password updated.";
+    }
+  } catch (error) {
+    if (elements.changePasswordError) {
+      elements.changePasswordError.textContent = error && error.message ? error.message : "Unable to update password.";
+    }
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+    }
+  }
+}
+
+async function handleDeleteAccountClick() {
+  resetAccountMenuFeedback();
+  const account = getCurrentAccountRecord();
+  if (!account) {
+    if (elements.accountMenuError) {
+      elements.accountMenuError.textContent = "No account is currently active.";
+    }
+    return;
+  }
+  const confirmed = window.confirm(
+    "Deleting your account removes all saved habits across devices. This cannot be undone."
+  );
+  if (!confirmed) {
+    return;
+  }
+  const deleteButton = elements.deleteAccountButton || null;
+  if (deleteButton) {
+    deleteButton.disabled = true;
+  }
+  try {
+    const session = await ensureSupabaseSession();
+    if (!session || !session.accessToken) {
+      throw new Error("Sign in again to delete your account.");
+    }
+    const supabase = getSupabaseAccountConfig();
+    if (!supabase) {
+      throw new Error("Supabase is not configured.");
+    }
+    const baseUrl = sanitizeSupabaseUrl(supabase.url);
+    const remoteId = session.remoteId || account.remoteId || account.id;
+    const headers = createSupabaseHeaders(supabase.anonKey, session.accessToken);
+
+    const profileResponse = await fetch(
+      `${baseUrl}/rest/v1/${supabase.dataTable}?user_id=eq.${encodeURIComponent(remoteId)}`,
+      {
+        method: "DELETE",
+        headers,
+      }
+    );
+    if (!profileResponse.ok && profileResponse.status !== 404) {
+      const payload = await readSupabaseResponse(profileResponse);
+      throw new Error(parseSupabaseErrorMessage(profileResponse.status, payload));
+    }
+
+    const accountResponse = await fetch(
+      `${baseUrl}/rest/v1/${supabase.accountsTable}?user_id=eq.${encodeURIComponent(remoteId)}`,
+      {
+        method: "DELETE",
+        headers,
+      }
+    );
+    if (!accountResponse.ok && accountResponse.status !== 404) {
+      const payload = await readSupabaseResponse(accountResponse);
+      throw new Error(parseSupabaseErrorMessage(accountResponse.status, payload));
+    }
+
+    const deleteResponse = await fetch(`${baseUrl}/auth/v1/user`, {
+      method: "DELETE",
+      headers,
+    });
+    if (!deleteResponse.ok) {
+      const payload = await readSupabaseResponse(deleteResponse);
+      throw new Error(parseSupabaseErrorMessage(deleteResponse.status, payload));
+    }
+
+    try {
+      localStorage.removeItem(getUserStorageKey(account.id));
+    } catch (storageError) {
+      console.warn("Failed to remove local data for deleted account", storageError);
+    }
+    delete state.accountStore.users[account.id];
+    saveAccountStore(state.accountStore);
+    closeAccountMenu();
+    handleSignOut();
+  } catch (error) {
+    if (elements.accountMenuError) {
+      elements.accountMenuError.textContent = error && error.message ? error.message : "Unable to delete account.";
+    }
+  } finally {
+    if (deleteButton) {
+      deleteButton.disabled = false;
+    }
+  }
 }
 
 async function handleSignIn(event) {
@@ -1638,72 +1657,6 @@ async function handleRegister(event) {
   if (elements.signInForm) {
     elements.signInForm.reset();
   }
-}
-
-function handleSyncSettingsSubmit(event) {
-  event.preventDefault();
-  clearAuthError();
-  const account = getCurrentAccountRecord();
-  if (!account) {
-    return;
-  }
-  const provider = elements.syncProvider ? elements.syncProvider.value : "local";
-  const enabled = provider === "supabase" && elements.syncEnabled ? elements.syncEnabled.checked : false;
-  const supabaseConfig = {
-    url: elements.syncSupabaseUrl ? elements.syncSupabaseUrl.value.trim() : "",
-    anonKey: elements.syncSupabaseAnonKey ? elements.syncSupabaseAnonKey.value.trim() : "",
-    table:
-      elements.syncSupabaseTable && elements.syncSupabaseTable.value.trim()
-        ? elements.syncSupabaseTable.value.trim()
-        : DEFAULT_SYNC_SETTINGS.supabase.table,
-  };
-  const nextSync = {
-    enabled,
-    provider,
-    supabase: supabaseConfig,
-  };
-  const validationError = validateSupabaseConfig(nextSync);
-  if (validationError) {
-    if (elements.syncSettingsError) {
-      elements.syncSettingsError.textContent = validationError;
-    }
-    return;
-  }
-  account.sync = normalizeSyncSettings(nextSync);
-  saveAccountStore(state.accountStore);
-  if (elements.accountSettingsDialog) {
-    elements.accountSettingsDialog.close();
-  }
-  updateAccountBar();
-  updateSyncStatus();
-  if (isSupabaseConfigured() && state.authSession) {
-    upsertRemoteAccount(account, state.authSession).catch((error) => {
-      console.warn("Failed to update remote account from sync settings", error);
-    });
-  }
-  if (isSyncEnabled(account)) {
-    performSync({ forcePush: true })
-      .then(() => {
-        render();
-      })
-      .catch((error) => {
-        console.warn("Manual sync failed", error);
-      });
-  }
-}
-
-function handleManualSync() {
-  const account = getCurrentAccountRecord();
-  if (!isSyncEnabled(account)) {
-    return;
-  }
-  performSync({ forcePush: true })
-    .then(() => {
-      render();
-    })
-    .catch((error) => {
-      console.warn("Manual sync failed", error);
-    });
 }
 
 function ensureSettingsObject() {
@@ -3669,68 +3622,29 @@ if (elements.signOut) {
   elements.signOut.addEventListener("click", handleSignOut);
 }
 
-if (elements.openCloudSettings) {
-  elements.openCloudSettings.addEventListener("click", openCloudSettingsDialog);
+if (elements.accountChip) {
+  elements.accountChip.addEventListener("click", openAccountMenu);
 }
 
-if (elements.headerCloudSettings) {
-  elements.headerCloudSettings.addEventListener("click", openCloudSettingsDialog);
-}
-
-if (elements.openAccountSettings) {
-  elements.openAccountSettings.addEventListener("click", () => {
-    populateSyncSettings();
-    if (elements.accountSettingsDialog) {
-      elements.accountSettingsDialog.showModal();
-    }
+if (elements.accountMenuClose) {
+  elements.accountMenuClose.addEventListener("click", () => {
+    closeAccountMenu();
+    resetAccountMenuFeedback();
   });
 }
 
-if (elements.syncSettingsCancel) {
-  elements.syncSettingsCancel.addEventListener("click", () => {
-    if (elements.accountSettingsDialog) {
-      elements.accountSettingsDialog.close();
-    }
+if (elements.accountMenuDialog) {
+  elements.accountMenuDialog.addEventListener("close", () => {
+    resetAccountMenuFeedback();
   });
 }
 
-if (elements.accountSettingsDialog) {
-  elements.accountSettingsDialog.addEventListener("close", () => {
-    if (elements.syncSettingsError) {
-      elements.syncSettingsError.textContent = "";
-    }
-  });
+if (elements.changePasswordForm) {
+  elements.changePasswordForm.addEventListener("submit", handleChangePasswordSubmit);
 }
 
-if (elements.accountSettingsForm) {
-  elements.accountSettingsForm.addEventListener("submit", handleSyncSettingsSubmit);
-}
-
-if (elements.cloudSettingsForm) {
-  elements.cloudSettingsForm.addEventListener("submit", handleCloudSettingsSubmit);
-}
-
-if (elements.cloudSettingsCancel) {
-  elements.cloudSettingsCancel.addEventListener("click", closeCloudSettingsDialog);
-}
-
-if (elements.cloudSettingsDialog) {
-  elements.cloudSettingsDialog.addEventListener("close", () => {
-    if (elements.cloudSettingsError) {
-      elements.cloudSettingsError.textContent = "";
-    }
-  });
-}
-
-if (elements.syncProvider) {
-  elements.syncProvider.addEventListener("change", (event) => {
-    const provider = event.target && event.target.value ? event.target.value : "local";
-    applySyncProviderVisibility(provider);
-  });
-}
-
-if (elements.syncNow) {
-  elements.syncNow.addEventListener("click", handleManualSync);
+if (elements.deleteAccountButton) {
+  elements.deleteAccountButton.addEventListener("click", handleDeleteAccountClick);
 }
 
 if (elements.prevMonth) {
