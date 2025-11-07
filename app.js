@@ -451,6 +451,25 @@ function getDataTimestamp(data) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function hasMeaningfulData(data) {
+  if (!data || typeof data !== "object") {
+    return false;
+  }
+  const hasHabits = Array.isArray(data.habits) && data.habits.length > 0;
+  const hasEntries =
+    data.entries &&
+    typeof data.entries === "object" &&
+    Object.values(data.entries).some((habitEntries) => {
+      return (
+        habitEntries &&
+        typeof habitEntries === "object" &&
+        Object.keys(habitEntries).length > 0
+      );
+    });
+  const hasTodos = Array.isArray(data.todos) && data.todos.length > 0;
+  return hasHabits || hasEntries || hasTodos;
+}
+
 function loadUserData(userId) {
   if (!userId) {
     return createSeedData();
@@ -1225,22 +1244,45 @@ async function performSync(options = {}) {
         throw new Error("Supabase session required for syncing.");
       }
       const remote = await pullRemoteData(account, activeSession);
-      const localTimestamp = getDataTimestamp(state.data);
+      let localTimestamp = getDataTimestamp(state.data);
+      let localHasContent = hasMeaningfulData(state.data);
       let remoteTimestamp = null;
+      let remoteHasContent = false;
       if (remote && remote.data) {
         const normalized = migrateData(remote.data);
+        remoteHasContent = hasMeaningfulData(normalized);
         remoteTimestamp = getDataTimestamp(normalized) || (remote.updatedAt ? new Date(remote.updatedAt) : null);
-        if (!localTimestamp || (remoteTimestamp && remoteTimestamp > localTimestamp)) {
+        const shouldAdoptRemote =
+          remoteHasContent && (!localHasContent || !localTimestamp || (remoteTimestamp && localTimestamp && remoteTimestamp > localTimestamp));
+        if (shouldAdoptRemote) {
           state.data = normalized;
           persistUserData(account.id, state.data, { skipTouch: true });
           render();
+          localTimestamp = getDataTimestamp(state.data);
+          localHasContent = hasMeaningfulData(state.data);
         }
       }
-      const shouldPush =
-        forcePush ||
-        !remote ||
-        !remoteTimestamp ||
-        (localTimestamp && (!remoteTimestamp || localTimestamp >= remoteTimestamp));
+      const shouldPush = (() => {
+        if (forcePush) {
+          return true;
+        }
+        if (!remote) {
+          return localHasContent;
+        }
+        if (!remoteHasContent) {
+          return localHasContent;
+        }
+        if (!localHasContent) {
+          return false;
+        }
+        if (!remoteTimestamp) {
+          return Boolean(localTimestamp);
+        }
+        if (!localTimestamp) {
+          return false;
+        }
+        return localTimestamp > remoteTimestamp;
+      })();
       if (shouldPush) {
         await pushRemoteData(account, activeSession);
       } else {
