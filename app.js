@@ -1,3 +1,5 @@
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
 const STORAGE_KEY = "habit-tracker-data-v2";
 const LEGACY_STORAGE_KEYS = ["lod-tracker-data-v2"];
 const ACCOUNT_STORAGE_KEY = "habit-tracker-accounts";
@@ -9,8 +11,6 @@ const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBldWllZG9mbmJtam9kb2Vpa25rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIzOTE3OTUsImV4cCI6MjA3Nzk2Nzc5NX0.-lcNxCD7ceVnSfIp49_TF2iMKLpsyfbQssv774Eh72w";
 const SUPABASE_ACCOUNTS_TABLE = "tracker_accounts";
 const SUPABASE_DATA_TABLE = "tracker_profiles";
-const REMOTE_SYNC_POLL_INTERVAL = 5000;
-
 const DEFAULT_SYNC_SETTINGS = {
   enabled: true,
   provider: "supabase",
@@ -175,6 +175,12 @@ const state = {
     pushTimer: null,
     inFlight: null,
     pollTimer: null,
+    realtimeClient: null,
+    realtimeChannel: null,
+    realtimeRemoteId: null,
+    realtimeReconnectTimer: null,
+    lastRemoteUpdate: null,
+    shouldReconnect: false,
   },
 };
 
@@ -398,6 +404,7 @@ function saveSession(userId, session = null) {
 function clearSession() {
   state.authSession = null;
   localStorage.removeItem(SESSION_STORAGE_KEY);
+  applyRealtimeAuth(null);
 }
 
 function setAuthSession(session) {
@@ -567,23 +574,230 @@ function scheduleRemotePush() {
 }
 
 function stopRemoteSyncPolling() {
+  state.remoteSync.shouldReconnect = false;
   if (state.remoteSync.pollTimer) {
     clearInterval(state.remoteSync.pollTimer);
     state.remoteSync.pollTimer = null;
   }
+  clearRealtimeReconnectTimer();
+  if (state.remoteSync.realtimeChannel) {
+    const channel = state.remoteSync.realtimeChannel;
+    state.remoteSync.realtimeChannel = null;
+    try {
+      const result = channel.unsubscribe();
+      if (result && typeof result.catch === "function") {
+        result.catch((error) => {
+          console.warn("Failed to unsubscribe from realtime channel", error);
+        });
+      }
+    } catch (error) {
+      console.warn("Failed to unsubscribe from realtime channel", error);
+    }
+  } else {
+    state.remoteSync.realtimeChannel = null;
+  }
+  state.remoteSync.realtimeRemoteId = null;
 }
 
 function startRemoteSyncPolling() {
   stopRemoteSyncPolling();
-  const account = getCurrentAccountRecord();
-  if (!account || !isSyncEnabled(account)) {
+  state.remoteSync.shouldReconnect = true;
+  subscribeToRealtimeChanges().catch((error) => {
+    console.warn("Failed to subscribe to realtime updates", error);
+    scheduleRealtimeReconnect(5000);
+  });
+}
+
+function getRealtimeClient() {
+  if (state.remoteSync.realtimeClient) {
+    return state.remoteSync.realtimeClient;
+  }
+  const supabase = getSupabaseAccountConfig();
+  if (!supabase || !supabase.url || !supabase.anonKey) {
+    return null;
+  }
+  state.remoteSync.realtimeClient = createClient(supabase.url, supabase.anonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+    realtime: {
+      params: {
+        eventsPerSecond: 5,
+      },
+    },
+  });
+  return state.remoteSync.realtimeClient;
+}
+
+function clearRealtimeReconnectTimer() {
+  if (state.remoteSync.realtimeReconnectTimer) {
+    clearTimeout(state.remoteSync.realtimeReconnectTimer);
+    state.remoteSync.realtimeReconnectTimer = null;
+  }
+}
+
+function scheduleRealtimeReconnect(delay = 2000) {
+  clearRealtimeReconnectTimer();
+  if (!state.remoteSync.shouldReconnect) {
     return;
   }
-  state.remoteSync.pollTimer = setInterval(() => {
-    performSync({ forcePush: false }).catch((error) => {
-      console.warn("Remote sync poll failed", error);
+  state.remoteSync.realtimeReconnectTimer = setTimeout(() => {
+    startRemoteSyncPolling();
+  }, delay);
+}
+
+async function applyRealtimeAuth(session) {
+  if (!session || !session.accessToken) {
+    if (state.remoteSync.realtimeClient) {
+      try {
+        state.remoteSync.realtimeClient.realtime.setAuth(null);
+      } catch (error) {
+        console.warn("Failed to clear realtime auth", error);
+      }
+    }
+    return null;
+  }
+  const client = getRealtimeClient();
+  if (!client) {
+    return null;
+  }
+  try {
+    client.realtime.setAuth(session.accessToken);
+  } catch (error) {
+    console.warn("Failed to set realtime auth token", error);
+  }
+  if (session.refreshToken) {
+    try {
+      const { error } = await client.auth.setSession({
+        access_token: session.accessToken,
+        refresh_token: session.refreshToken,
+      });
+      if (error) {
+        console.warn("Failed to persist realtime auth session", error);
+      }
+    } catch (error) {
+      console.warn("Failed to persist realtime auth session", error);
+    }
+  }
+  return client;
+}
+
+async function subscribeToRealtimeChanges() {
+  const account = getCurrentAccountRecord();
+  if (!isSyncEnabled(account)) {
+    return;
+  }
+  const session = await ensureSupabaseSession();
+  if (!session || !session.accessToken) {
+    throw new Error("Supabase session required for realtime sync.");
+  }
+  const client = await applyRealtimeAuth(session);
+  if (!client) {
+    throw new Error("Unable to initialize realtime client.");
+  }
+  const remoteId = account.remoteId || account.id;
+  if (!remoteId) {
+    throw new Error("Missing remote identifier for realtime sync.");
+  }
+  const reconnectPreference = state.remoteSync.shouldReconnect;
+  if (state.remoteSync.realtimeChannel) {
+    state.remoteSync.shouldReconnect = false;
+    try {
+      await state.remoteSync.realtimeChannel.unsubscribe();
+    } catch (error) {
+      console.warn("Failed to clean up previous realtime channel", error);
+    } finally {
+      state.remoteSync.realtimeChannel = null;
+      state.remoteSync.shouldReconnect = reconnectPreference;
+    }
+  }
+  clearRealtimeReconnectTimer();
+  state.remoteSync.realtimeRemoteId = remoteId;
+  state.remoteSync.lastRemoteUpdate = null;
+  const filter = `user_id=eq.${remoteId}`;
+  const channel = client
+    .channel(`tracker-profiles-${remoteId}`)
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: SUPABASE_DATA_TABLE, filter },
+      (payload) => {
+        handleRealtimeChange(payload);
+      }
+    );
+  state.remoteSync.realtimeChannel = channel;
+  const { error } = await channel.subscribe((status) => {
+    if (channel !== state.remoteSync.realtimeChannel) {
+      return;
+    }
+    if (!state.remoteSync.shouldReconnect) {
+      return;
+    }
+    if (status === "SUBSCRIBED") {
+      performSync({ forcePush: false }).catch((syncError) => {
+        console.warn("Realtime resync failed", syncError);
+      });
+    }
+    if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+      scheduleRealtimeReconnect();
+    }
+    if (status === "CLOSED") {
+      scheduleRealtimeReconnect(4000);
+    }
+  });
+  if (error) {
+    scheduleRealtimeReconnect();
+    if (state.remoteSync.realtimeChannel === channel) {
+      state.remoteSync.realtimeChannel = null;
+    }
+    throw error;
+  }
+}
+
+function handleRealtimeChange(payload) {
+  const account = getCurrentAccountRecord();
+  if (!isSyncEnabled(account)) {
+    return;
+  }
+  const newRecord = payload && payload.new ? payload.new : null;
+  const updatedAtIso = newRecord && newRecord.updated_at ? newRecord.updated_at : null;
+  let remoteData = null;
+  if (newRecord && newRecord.data) {
+    remoteData = typeof newRecord.data === "string" ? safeJsonParse(newRecord.data) : newRecord.data;
+  }
+  const localTimestamp = getDataTimestamp(state.data);
+  const remoteTimestamp = getDataTimestamp(remoteData) || (updatedAtIso ? new Date(updatedAtIso) : null);
+  if (remoteTimestamp && localTimestamp && remoteTimestamp <= localTimestamp) {
+    state.remoteSync.lastRemoteUpdate = updatedAtIso || null;
+    return;
+  }
+  if (remoteData && hasMeaningfulData(remoteData)) {
+    const normalized = migrateData(remoteData);
+    state.data = normalized;
+    persistUserData(account.id, state.data, { skipTouch: true });
+    state.remoteSync.lastRemoteUpdate = updatedAtIso || (remoteTimestamp ? remoteTimestamp.toISOString() : null);
+    render();
+    updateSyncStatus();
+    return;
+  }
+  state.remoteSync.lastRemoteUpdate = updatedAtIso || null;
+  performSync({ forcePush: false })
+    .then(() => {
+      render();
+    })
+    .catch((error) => {
+      console.warn("Realtime sync failed", error);
     });
-  }, REMOTE_SYNC_POLL_INTERVAL);
+}
+
+function safeJsonParse(value) {
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    console.warn("Failed to parse realtime payload", error);
+    return null;
+  }
 }
 
 async function hashPassword(password) {
@@ -628,6 +842,8 @@ function resetRemoteSyncState() {
   state.remoteSync.lastError = null;
   state.remoteSync.lastSyncedAt = null;
   state.remoteSync.inFlight = null;
+  state.remoteSync.lastRemoteUpdate = null;
+  state.remoteSync.shouldReconnect = false;
 }
 
 function isSyncEnabled(account) {
@@ -1020,6 +1236,9 @@ async function ensureSupabaseSession() {
     const refreshed = await refreshSupabaseSession(state.authSession.refreshToken, state.authSession);
     state.authSession = refreshed;
     saveSession(refreshed.userId, refreshed);
+    if (state.remoteSync.realtimeChannel || state.remoteSync.realtimeReconnectTimer) {
+      await applyRealtimeAuth(refreshed);
+    }
     return refreshed;
   } catch (error) {
     console.warn("Failed to refresh Supabase session", error);

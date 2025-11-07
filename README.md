@@ -5,7 +5,7 @@ A single-page web app for logging multi-checkpoint habits, capturing focus to-do
 ## Highlights
 
 - 🔐 **Supabase-backed accounts:** Authentication, password changes, and data sync run through the hosted Supabase project so any device signed in with your account loads the same tracker instantly.
-- 🔄 **Always-on sync:** Habit updates push to Supabase immediately and every session polls for fresh data—log a habit on your phone and the browser reflects it automatically without a sync button.
+- 🔄 **Realtime sync:** Habit updates push to Supabase immediately and live changes stream over websockets, so logging on your phone updates the browser (and vice versa) within moments—no manual sync button required.
 - 🗓️ **Per-habit heatmaps:** Dense GitHub-style grids that flex per habit—weekly rows summarize a whole week while month and year layouts track individual days.
 - 🔁 **Customizable range:** Tap a habit label to pick a 7-day week, weekly goal grid, month, or year and the calendar instantly reflows with the right column count and cell size.
 - 🎯 **Weekly goals:** Give weekly cells their own target (e.g., 3 gym visits) so the tint reflects how close you came to that goal.
