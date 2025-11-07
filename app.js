@@ -762,18 +762,26 @@ function handleRealtimeChange(payload) {
   }
   const newRecord = payload && payload.new ? payload.new : null;
   const updatedAtIso = newRecord && newRecord.updated_at ? newRecord.updated_at : null;
-  if (updatedAtIso) {
-    if (state.remoteSync.lastRemoteUpdate && updatedAtIso <= state.remoteSync.lastRemoteUpdate) {
-      return;
-    }
-    const remoteTimestamp = new Date(updatedAtIso);
-    const localTimestamp = getDataTimestamp(state.data);
-    if (localTimestamp && remoteTimestamp <= localTimestamp) {
-      state.remoteSync.lastRemoteUpdate = updatedAtIso;
-      return;
-    }
-    state.remoteSync.lastRemoteUpdate = updatedAtIso;
+  let remoteData = null;
+  if (newRecord && newRecord.data) {
+    remoteData = typeof newRecord.data === "string" ? safeJsonParse(newRecord.data) : newRecord.data;
   }
+  const localTimestamp = getDataTimestamp(state.data);
+  const remoteTimestamp = getDataTimestamp(remoteData) || (updatedAtIso ? new Date(updatedAtIso) : null);
+  if (remoteTimestamp && localTimestamp && remoteTimestamp <= localTimestamp) {
+    state.remoteSync.lastRemoteUpdate = updatedAtIso || null;
+    return;
+  }
+  if (remoteData && hasMeaningfulData(remoteData)) {
+    const normalized = migrateData(remoteData);
+    state.data = normalized;
+    persistUserData(account.id, state.data, { skipTouch: true });
+    state.remoteSync.lastRemoteUpdate = updatedAtIso || (remoteTimestamp ? remoteTimestamp.toISOString() : null);
+    render();
+    updateSyncStatus();
+    return;
+  }
+  state.remoteSync.lastRemoteUpdate = updatedAtIso || null;
   performSync({ forcePush: false })
     .then(() => {
       render();
@@ -781,6 +789,15 @@ function handleRealtimeChange(payload) {
     .catch((error) => {
       console.warn("Realtime sync failed", error);
     });
+}
+
+function safeJsonParse(value) {
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    console.warn("Failed to parse realtime payload", error);
+    return null;
+  }
 }
 
 async function hashPassword(password) {
