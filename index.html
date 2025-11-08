@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Habit tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="authGate" class="auth-gate" aria-live="polite">
+      <div class="auth-card" role="dialog" aria-modal="true">
+        <header class="auth-header">
+          <h1>Habit tracker</h1>
+          <p id="authSubtitle" class="muted">
+            Sign in to access your habits on any device.
+          </p>
+        </header>
+        <form id="signInForm" class="auth-form" autocomplete="off">
+          <div class="field">
+            <label for="signInEmail">Email</label>
+            <input id="signInEmail" type="email" required autocomplete="username" />
+          </div>
+          <div class="field">
+            <label for="signInPassword">Password</label>
+            <input
+              id="signInPassword"
+              type="password"
+              required
+              minlength="8"
+              autocomplete="current-password"
+            />
+          </div>
+          <button type="submit" class="primary">Sign in</button>
+        </form>
+        <p id="authError" class="auth-error" role="status"></p>
+      </div>
+    </div>
+
+    <div class="app-shell is-hidden" id="appShell">
+      <header class="account-bar">
+        <div class="account-info">
+          <button
+            id="accountChip"
+            type="button"
+            class="account-chip"
+            hidden
+            aria-haspopup="dialog"
+          >
+            <span id="accountChipInitial" class="account-chip-initial" aria-hidden="true"></span>
+            <span id="accountChipEmail" class="account-chip-email"></span>
+          </button>
+        </div>
+        <div class="account-actions">
+          <button
+            id="syncIndicator"
+            type="button"
+            class="sync-indicator"
+            hidden
+            aria-label="Out of sync. Click to refresh data from the cloud."
+            title="Out of sync"
+          >
+            <span class="sync-indicator-icon" aria-hidden="true">⚠️</span>
+            <span class="sync-indicator-text">Out of sync</span>
+          </button>
+          <button id="signOut" type="button" class="ghost small">Sign out</button>
+        </div>
+      </header>
+      <main class="app-layout">
+        <aside class="sidebar">
+          <section class="card today-card" aria-labelledby="todayHeading">
+            <header class="section-header">
+              <div>
+                <h2 id="todayHeading">Selected day</h2>
+                <p id="selectedDayLabel" class="muted"></p>
+              </div>
+            </header>
+            <div class="selected-calendar">
+              <div class="selected-calendar-header" aria-live="polite">
+                <button id="prevMonth" type="button" aria-label="Previous month">&#8592;</button>
+                <div id="monthLabel" class="selected-calendar-label"></div>
+                <button id="nextMonth" type="button" aria-label="Next month">&#8594;</button>
+              </div>
+              <div class="selected-calendar-weekdays" aria-hidden="true">
+                <span>Sun</span>
+                <span>Mon</span>
+                <span>Tue</span>
+                <span>Wed</span>
+                <span>Thu</span>
+                <span>Fri</span>
+                <span>Sat</span>
+              </div>
+              <div id="selectedDayCalendar" class="selected-calendar-grid" role="grid"></div>
+            </div>
+            <div class="today-list" aria-live="polite">
+              <h3>Log habits</h3>
+              <ul id="todayHabitList" class="habit-checklist"></ul>
+            </div>
+            <div class="quick-log">
+              <div class="quick-log-header">
+                <h3>Quick log</h3>
+                <p class="muted">Search a habit, hit enter to toggle.</p>
+              </div>
+              <input
+                id="habitSearch"
+                type="search"
+                placeholder="Search habits..."
+                aria-label="Search habits"
+                autocomplete="off"
+              />
+              <ul id="searchResults" class="search-results"></ul>
+            </div>
+          </section>
+
+          <section class="card library-card" aria-labelledby="habitLibraryHeading">
+            <div class="section-header">
+              <h2 id="habitLibraryHeading">Habit library</h2>
+              <button id="openHabitDialog" type="button" class="primary">New habit</button>
+            </div>
+            <div class="habit-tabs" role="tablist">
+              <button
+                id="habitTabActive"
+                type="button"
+                role="tab"
+                aria-selected="true"
+                class="tab-button is-active"
+                data-library-filter="active"
+              >
+                Active
+              </button>
+              <button
+                id="habitTabArchived"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                class="tab-button"
+                data-library-filter="archived"
+              >
+                Archived
+              </button>
+            </div>
+            <ul id="habitLibrary" class="habit-library"></ul>
+          </section>
+          <button id="resetData" type="button" class="ghost reset-button">Reset data</button>
+        </aside>
+
+        <section class="calendar-column">
+          <div class="card calendar-card" aria-labelledby="calendarHeading">
+            <div class="section-header">
+              <div class="calendar-heading">
+                <h2 id="calendarHeading">Habit heatmap</h2>
+                <p id="calendarViewLabel" class="muted small"></p>
+              </div>
+              <div class="legend" aria-hidden="true">
+                <span>Less</span>
+                <span class="legend-swatch level-1"></span>
+                <span class="legend-swatch level-2"></span>
+                <span class="legend-swatch level-3"></span>
+                <span class="legend-swatch level-4"></span>
+                <span>More</span>
+              </div>
+            </div>
+            <div class="calendar-grid" role="table">
+              <div id="calendarRows" class="calendar-rows"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="tasks-column">
+          <div class="card tasks-card" aria-labelledby="tasksHeading">
+            <header class="section-header">
+              <div>
+                <h2 id="tasksHeading">Focus to-dos</h2>
+                <p class="muted">Stack quick wins next to your habit streaks.</p>
+              </div>
+              <button id="clearCompletedTodos" type="button" class="ghost">Clear completed</button>
+            </header>
+            <form id="todoForm" class="todo-form" autocomplete="off">
+              <input
+                id="todoInput"
+                type="text"
+                placeholder="Add a focus task..."
+                aria-label="Add a focus task"
+                required
+              />
+              <button type="submit" class="primary">Add</button>
+            </form>
+            <ul id="todoList" class="todo-list" aria-live="polite"></ul>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="habitDialog" class="modal">
+      <form id="habitForm" method="dialog" class="modal-content">
+        <header>
+          <h2 id="habitFormTitle">New habit</h2>
+        </header>
+        <label>
+          Name
+          <input type="text" id="habitName" required />
+        </label>
+        <label>
+          Color
+          <input type="color" id="habitColor" value="#2563eb" />
+        </label>
+        <div class="subhabit-builder">
+          <div class="subhabit-header">
+            <span>Sub-habits</span>
+            <button type="button" id="addSubHabit" class="ghost">Add sub-habit</button>
+          </div>
+          <p class="muted">Create checkpoints like specific prayer times or meal slots.</p>
+          <ul id="subHabitList" class="subhabit-list-inputs"></ul>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="habitArchived" /> Archive habit
+        </label>
+        <footer class="modal-actions">
+          <button type="button" id="habitCancel" class="ghost">Cancel</button>
+          <button type="submit" class="primary">Save</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="heatmapSettingsDialog" class="modal">
+      <form id="heatmapSettingsForm" method="dialog" class="modal-content">
+        <header>
+          <h2 id="heatmapSettingsTitle">Heatmap view</h2>
+          <p class="muted">Choose how many days to show in each habit grid.</p>
+        </header>
+        <fieldset class="radio-group">
+          <legend class="visually-hidden">Heatmap range</legend>
+          <label class="radio-option">
+            <input type="radio" name="heatmapView" value="weekDays" />
+            <span>
+              <strong>Week view</strong>
+              <small>Seven-day focus with one cell per day.</small>
+            </span>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="heatmapView" value="week" />
+            <span>
+              <strong>Weekly view</strong>
+              <small>Track 52 weeks with intensity by weekly goal.</small>
+            </span>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="heatmapView" value="month" checked />
+            <span>
+              <strong>Month view</strong>
+              <small>Track this month at a glance.</small>
+            </span>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="heatmapView" value="year" />
+            <span>
+              <strong>Year view</strong>
+              <small>See streaks across the full year.</small>
+            </span>
+          </label>
+        </fieldset>
+        <div id="heatmapWeeklyTargetRow" class="weekly-target-field">
+          <label for="heatmapWeeklyTarget">
+            Weekly goal
+            <input
+              type="number"
+              id="heatmapWeeklyTarget"
+              name="weeklyTarget"
+              min="1"
+              max="7"
+              step="1"
+              inputmode="numeric"
+            />
+          </label>
+          <p class="muted small">
+            Cells fill once you hit this many complete days in a week.
+          </p>
+        </div>
+        <footer class="modal-actions">
+          <button type="button" id="heatmapSettingsCancel" class="ghost">Cancel</button>
+          <button type="submit" class="primary">Apply</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="accountMenuDialog" class="modal">
+      <div class="modal-content account-menu">
+        <header>
+          <h2>Account</h2>
+          <p class="muted small">Update your password or delete your tracker data.</p>
+        </header>
+        <section class="account-menu-section">
+          <h3>Change password</h3>
+          <form id="changePasswordForm" class="account-menu-form" autocomplete="off">
+            <label for="changePasswordNew">
+              New password
+              <input type="password" id="changePasswordNew" minlength="8" required autocomplete="new-password" />
+            </label>
+            <label for="changePasswordConfirm">
+              Confirm password
+              <input type="password" id="changePasswordConfirm" minlength="8" required autocomplete="new-password" />
+            </label>
+            <p id="changePasswordError" class="auth-error" role="status"></p>
+            <p id="changePasswordSuccess" class="auth-success" role="status"></p>
+            <footer class="modal-actions compact">
+              <button type="submit" class="primary">Update password</button>
+            </footer>
+          </form>
+        </section>
+        <section class="account-menu-section">
+          <h3>Delete account</h3>
+          <p class="muted small">
+            This removes your habits everywhere and signs you out immediately.
+          </p>
+          <p id="accountMenuError" class="auth-error" role="status"></p>
+          <button id="deleteAccountButton" type="button" class="ghost danger">Delete account</button>
+        </section>
+        <footer class="modal-actions">
+          <button type="button" id="accountMenuClose" class="ghost">Close</button>
+        </footer>
+      </div>
+    </dialog>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
