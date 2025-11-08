@@ -43,38 +43,7 @@
           </div>
           <button type="submit" class="primary">Sign in</button>
         </form>
-        <form id="registerForm" class="auth-form is-hidden" autocomplete="off">
-          <div class="field">
-            <label for="registerEmail">Email</label>
-            <input id="registerEmail" type="email" required autocomplete="username" />
-          </div>
-          <div class="field">
-            <label for="registerPassword">Password</label>
-            <input
-              id="registerPassword"
-              type="password"
-              required
-              minlength="8"
-              autocomplete="new-password"
-            />
-          </div>
-          <div class="field">
-            <label for="registerConfirm">Confirm password</label>
-            <input
-              id="registerConfirm"
-              type="password"
-              required
-              minlength="8"
-              autocomplete="new-password"
-            />
-          </div>
-          <button type="submit" class="primary">Create account</button>
-        </form>
         <p id="authError" class="auth-error" role="status"></p>
-        <p class="auth-switch">
-          <button id="showRegister" type="button">Need an account?</button>
-          <button id="showSignIn" type="button" class="is-hidden">Have an account?</button>
-        </p>
       </div>
     </div>
 
@@ -93,6 +62,17 @@
           </button>
         </div>
         <div class="account-actions">
+          <button
+            id="syncIndicator"
+            type="button"
+            class="sync-indicator"
+            hidden
+            aria-label="Out of sync. Click to refresh data from the cloud."
+            title="Out of sync"
+          >
+            <span class="sync-indicator-icon" aria-hidden="true">⚠️</span>
+            <span class="sync-indicator-text">Out of sync</span>
+          </button>
           <button id="signOut" type="button" class="ghost small">Sign out</button>
         </div>
       </header>

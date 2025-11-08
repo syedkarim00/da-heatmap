@@ -1,11 +1,5 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
-const STORAGE_KEY = "habit-tracker-data-v2";
-const LEGACY_STORAGE_KEYS = ["lod-tracker-data-v2"];
-const ACCOUNT_STORAGE_KEY = "habit-tracker-accounts";
-const CLOUD_SETTINGS_KEY = "habit-tracker-cloud-settings";
-const SESSION_STORAGE_KEY = "habit-tracker-session";
-
 const SUPABASE_URL = "https://peuiedofnbmjodoeiknk.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBldWllZG9mbmJtam9kb2Vpa25rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIzOTE3OTUsImV4cCI6MjA3Nzk2Nzc5NX0.-lcNxCD7ceVnSfIp49_TF2iMKLpsyfbQssv774Eh72w";
@@ -168,6 +162,7 @@ const state = {
   selectionGlowTimer: null,
   draggingHabitId: null,
   dragHandleActive: null,
+  isOutOfSync: false,
   remoteSync: {
     pending: false,
     lastSyncedAt: null,
@@ -196,20 +191,14 @@ const elements = {
   appShell: document.getElementById("appShell"),
   authGate: document.getElementById("authGate"),
   signInForm: document.getElementById("signInForm"),
-  registerForm: document.getElementById("registerForm"),
   signInEmail: document.getElementById("signInEmail"),
   signInPassword: document.getElementById("signInPassword"),
-  registerEmail: document.getElementById("registerEmail"),
-  registerPassword: document.getElementById("registerPassword"),
-  registerConfirm: document.getElementById("registerConfirm"),
-  showRegister: document.getElementById("showRegister"),
-  showSignIn: document.getElementById("showSignIn"),
   authError: document.getElementById("authError"),
   authSubtitle: document.getElementById("authSubtitle"),
   accountChip: document.getElementById("accountChip"),
   accountChipInitial: document.getElementById("accountChipInitial"),
   accountChipEmail: document.getElementById("accountChipEmail"),
-  syncStatus: document.getElementById("syncStatus"),
+  syncIndicator: document.getElementById("syncIndicator"),
   signOut: document.getElementById("signOut"),
   accountMenuDialog: document.getElementById("accountMenuDialog"),
   accountMenuClose: document.getElementById("accountMenuClose"),
@@ -267,21 +256,10 @@ function normalizeCloudSettings() {
 }
 
 function loadCloudSettings() {
-  try {
-    localStorage.removeItem(CLOUD_SETTINGS_KEY);
-  } catch (error) {
-    console.warn("Failed to clear stored cloud settings", error);
-  }
   return cloneCloudSettings();
 }
 
-function saveCloudSettings() {
-  try {
-    localStorage.removeItem(CLOUD_SETTINGS_KEY);
-  } catch (error) {
-    console.warn("Failed to clear stored cloud settings", error);
-  }
-}
+function saveCloudSettings() {}
 
 function cloneDefaultSyncSettings() {
   return {
@@ -308,105 +286,23 @@ function normalizeSyncSettings(sync) {
 }
 
 function loadAccountStore() {
-  try {
-    const stored = localStorage.getItem(ACCOUNT_STORAGE_KEY);
-    if (!stored) {
-      return { users: {} };
-    }
-    const parsed = JSON.parse(stored);
-    if (!parsed || typeof parsed !== "object" || typeof parsed.users !== "object") {
-      return { users: {} };
-    }
-    const users = {};
-    Object.entries(parsed.users).forEach(([id, record]) => {
-      if (!record || typeof record !== "object") {
-        return;
-      }
-      const normalizedId = (id || "").toLowerCase();
-      const remoteId =
-        record && typeof record.remoteId === "string" && record.remoteId
-          ? record.remoteId
-          : record && typeof record.supabaseUserId === "string" && record.supabaseUserId
-          ? record.supabaseUserId
-          : normalizedId;
-      users[normalizedId] = {
-        id: normalizedId,
-        email: record.email || normalizedId,
-        passwordHash: record.passwordHash || "",
-        createdAt: record.createdAt || null,
-        lastLoginAt: record.lastLoginAt || null,
-        remoteId,
-        sync: normalizeSyncSettings(record.sync),
-      };
-    });
-    return { users };
-  } catch (error) {
-    console.warn("Failed to parse account store", error);
-    return { users: {} };
-  }
+  return { users: {} };
 }
 
-function saveAccountStore(store) {
-  try {
-    localStorage.setItem(ACCOUNT_STORAGE_KEY, JSON.stringify(store));
-  } catch (error) {
-    console.warn("Failed to persist account store", error);
-  }
-}
+function saveAccountStore() {}
 
 function normalizeEmail(value) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
 function loadSession() {
-  try {
-    const stored = localStorage.getItem(SESSION_STORAGE_KEY);
-    if (!stored) {
-      return null;
-    }
-    const parsed = JSON.parse(stored);
-    if (!parsed || typeof parsed !== "object" || !parsed.userId) {
-      return null;
-    }
-    const normalizedId = normalizeEmail(parsed.userId);
-    return {
-      userId: normalizedId,
-      email: typeof parsed.email === "string" ? parsed.email : null,
-      remoteId: typeof parsed.remoteId === "string" ? parsed.remoteId : null,
-      accessToken: typeof parsed.accessToken === "string" ? parsed.accessToken : null,
-      refreshToken: typeof parsed.refreshToken === "string" ? parsed.refreshToken : null,
-      expiresAt: typeof parsed.expiresAt === "number" ? parsed.expiresAt : null,
-    };
-  } catch (error) {
-    console.warn("Failed to parse saved session", error);
-  }
   return null;
 }
 
-function saveSession(userId, session = null) {
-  if (!userId) {
-    localStorage.removeItem(SESSION_STORAGE_KEY);
-    return;
-  }
-  try {
-    const normalizedId = normalizeEmail(userId);
-    const payload = {
-      userId: normalizedId,
-      email: session && session.email ? session.email : null,
-      remoteId: session && session.remoteId ? session.remoteId : null,
-      accessToken: session && session.accessToken ? session.accessToken : null,
-      refreshToken: session && session.refreshToken ? session.refreshToken : null,
-      expiresAt: session && typeof session.expiresAt === "number" ? session.expiresAt : null,
-    };
-    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload));
-  } catch (error) {
-    console.warn("Failed to persist session", error);
-  }
-}
+function saveSession() {}
 
 function clearSession() {
   state.authSession = null;
-  localStorage.removeItem(SESSION_STORAGE_KEY);
   applyRealtimeAuth(null);
 }
 
@@ -426,17 +322,6 @@ function setAuthSession(session) {
   };
   state.authSession = normalized.accessToken ? normalized : null;
   saveSession(normalizedId, normalized);
-}
-
-function getUserStorageKey(userId) {
-  return `${STORAGE_KEY}:${userId}`;
-}
-
-function clearLegacyKeys() {
-  localStorage.removeItem(STORAGE_KEY);
-  LEGACY_STORAGE_KEYS.forEach((legacyKey) => {
-    localStorage.removeItem(legacyKey);
-  });
 }
 
 function ensureDataMeta(data) {
@@ -480,48 +365,12 @@ function hasMeaningfulData(data) {
   return hasHabits || hasEntries || hasTodos;
 }
 
-function loadUserData(userId) {
-  if (!userId) {
-    return createSeedData();
-  }
-  try {
-    let sourceKey = getUserStorageKey(userId);
-    let stored = localStorage.getItem(sourceKey);
-    if (!stored) {
-      const legacyKeys = [STORAGE_KEY, ...LEGACY_STORAGE_KEYS];
-      for (const legacyKey of legacyKeys) {
-        const legacyValue = localStorage.getItem(legacyKey);
-        if (legacyValue) {
-          stored = legacyValue;
-          sourceKey = legacyKey;
-          break;
-        }
-      }
-    }
-
-    if (!stored) {
-      const seed = createSeedData();
-      persistUserData(userId, seed, { skipTouch: true });
-      return seed;
-    }
-
-    const parsed = JSON.parse(stored);
-    const normalized = migrateData(parsed);
-    persistUserData(userId, normalized, { skipTouch: true });
-    if (sourceKey !== getUserStorageKey(userId)) {
-      clearLegacyKeys();
-    }
-    return normalized;
-  } catch (error) {
-    console.warn("Failed to parse stored data, resetting", error);
-    const seed = createSeedData();
-    persistUserData(userId, seed, { skipTouch: true });
-    return seed;
-  }
+function loadUserData() {
+  return createSeedData();
 }
 
-function persistUserData(userId, data, options = {}) {
-  if (!userId || !data) {
+function persistUserData(_userId, data, options = {}) {
+  if (!data) {
     return;
   }
   const { skipTouch = false } = options;
@@ -529,11 +378,6 @@ function persistUserData(userId, data, options = {}) {
     ensureDataMeta(data);
   } else {
     touchData(data);
-  }
-  try {
-    localStorage.setItem(getUserStorageKey(userId), JSON.stringify(data));
-  } catch (error) {
-    console.warn("Failed to persist tracker data", error);
   }
 }
 
@@ -556,13 +400,13 @@ function cancelRemotePush() {
 function scheduleRemotePush() {
   const account = getCurrentAccountRecord();
   if (!account || !isSyncEnabled(account)) {
-    updateSyncStatus();
+    setOutOfSync(false);
     return;
   }
   cancelRemotePush();
   state.remoteSync.pending = true;
   state.remoteSync.lastError = null;
-  updateSyncStatus();
+  updateSyncIndicator();
   state.remoteSync.pushTimer = setTimeout(async () => {
     state.remoteSync.pushTimer = null;
     try {
@@ -571,7 +415,7 @@ function scheduleRemotePush() {
       console.error("Failed to sync data", error);
       state.remoteSync.pending = false;
       state.remoteSync.lastError = error && error.message ? error.message : String(error);
-      updateSyncStatus();
+      updateSyncIndicator();
     }
   }, REMOTE_PUSH_DEBOUNCE);
 }
@@ -816,7 +660,7 @@ function handleRealtimeChange(payload) {
     updateRemoteMarker("lastRemoteUpdate", remoteIso);
     updateRemoteMarker("lastRemoteCommit", commitIso || remoteIso);
     render();
-    updateSyncStatus();
+    setOutOfSync(false);
     return;
   }
 
@@ -828,7 +672,6 @@ function handleRealtimeChange(payload) {
   performSync({ forcePush: false, preferRemote: commitIsNewer, remoteCommit: commitIso || updatedAtIso || null })
     .then(() => {
       render();
-      updateSyncStatus();
     })
     .catch((error) => {
       console.warn("Realtime sync failed", error);
@@ -874,7 +717,6 @@ function handleRealtimeBroadcast(message) {
   performSync({ forcePush: false, preferRemote: true, remoteCommit: commitIso || updatedIso || null })
     .then(() => {
       render();
-      updateSyncStatus();
     })
     .catch((error) => {
       console.warn("Realtime broadcast sync failed", error);
@@ -1029,20 +871,10 @@ function isSyncEnabled(account) {
   return Boolean(supabase.url && supabase.anonKey && supabase.table);
 }
 
-function setAuthMode(mode) {
-  state.authMode = mode === "register" ? "register" : "signIn";
-  const isRegister = state.authMode === "register";
+function setAuthMode() {
+  state.authMode = "signIn";
   if (elements.signInForm) {
-    elements.signInForm.classList.toggle("is-hidden", isRegister);
-  }
-  if (elements.registerForm) {
-    elements.registerForm.classList.toggle("is-hidden", !isRegister);
-  }
-  if (elements.showRegister) {
-    elements.showRegister.classList.toggle("is-hidden", isRegister);
-  }
-  if (elements.showSignIn) {
-    elements.showSignIn.classList.toggle("is-hidden", !isRegister);
+    elements.signInForm.classList.remove("is-hidden");
   }
   updateAuthSubtitle();
   clearAuthError();
@@ -1052,10 +884,7 @@ function updateAuthSubtitle() {
   if (!elements.authSubtitle) {
     return;
   }
-  const isRegister = state.authMode === "register";
-  elements.authSubtitle.textContent = isRegister
-    ? "Create an account to start tracking everywhere."
-    : "Sign in to access your habits on any device.";
+  elements.authSubtitle.textContent = "Sign in to access your habits on any device.";
 }
 
 function setAuthError(message) {
@@ -1077,7 +906,7 @@ function showAuthGate() {
   if (elements.appShell) {
     elements.appShell.classList.add("is-hidden");
   }
-  setAuthMode(state.authMode);
+  setAuthMode();
 }
 
 function hideAuthGate() {
@@ -1151,36 +980,33 @@ function formatTimeAgo(iso) {
   return relativeTimeFormatter.format(diffDays, "day");
 }
 
-function updateSyncStatus() {
-  if (!elements.syncStatus) {
+function updateSyncIndicator() {
+  if (!elements.syncIndicator) {
     return;
   }
+  if (!state.isAuthenticated || !state.isOutOfSync) {
+    elements.syncIndicator.setAttribute("hidden", "hidden");
+    return;
+  }
+  elements.syncIndicator.removeAttribute("hidden");
+}
+
+function setOutOfSync(isOutOfSync) {
+  state.isOutOfSync = Boolean(isOutOfSync);
+  updateSyncIndicator();
+}
+
+async function handleSyncIndicatorClick(event) {
+  event.preventDefault();
   if (!state.isAuthenticated) {
-    elements.syncStatus.textContent = "";
     return;
   }
-  const account = getCurrentAccountRecord();
-  if (!isSyncEnabled(account)) {
-    elements.syncStatus.textContent = "Local only";
-    return;
+  try {
+    await performSync({ forcePush: false, preferRemote: true });
+    render();
+  } catch (error) {
+    console.warn("Manual refresh failed", error);
   }
-  if (!state.authSession || !state.authSession.accessToken) {
-    elements.syncStatus.textContent = "Cloud auth required";
-    return;
-  }
-  if (state.remoteSync.pending || state.remoteSync.pushTimer || state.remoteSync.inFlight) {
-    elements.syncStatus.textContent = "Syncing…";
-    return;
-  }
-  if (state.remoteSync.lastError) {
-    elements.syncStatus.textContent = `Sync error: ${state.remoteSync.lastError}`;
-    return;
-  }
-  if (state.remoteSync.lastSyncedAt) {
-    elements.syncStatus.textContent = `Synced ${formatTimeAgo(state.remoteSync.lastSyncedAt)}`;
-    return;
-  }
-  elements.syncStatus.textContent = "Cloud sync ready";
 }
 
 function sanitizeSupabaseUrl(url) {
@@ -1328,39 +1154,6 @@ async function supabaseSignIn(email, password) {
   return session;
 }
 
-async function supabaseSignUp(email, password) {
-  const supabase = getSupabaseAccountConfig();
-  if (!supabase) {
-    throw new Error("Supabase is not configured.");
-  }
-  const baseUrl = sanitizeSupabaseUrl(supabase.url);
-  const target = `${baseUrl}/auth/v1/signup`;
-  const response = await fetch(target, {
-    method: "POST",
-    headers: {
-      apikey: supabase.anonKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ email, password }),
-  });
-  const payload = await readSupabaseResponse(response);
-  if (!response.ok) {
-    throw new Error(parseSupabaseErrorMessage(response.status, payload));
-  }
-  let session = normalizeSupabaseSessionPayload(payload, email);
-  if (!session || !session.accessToken) {
-    try {
-      session = await supabaseSignIn(email, password);
-    } catch (error) {
-      const message =
-        (payload && typeof payload === "object" && payload.message) ||
-        "Check your email to confirm the account before signing in.";
-      throw new Error(message);
-    }
-  }
-  return session;
-}
-
 async function refreshSupabaseSession(refreshToken, previous) {
   const supabase = getSupabaseAccountConfig();
   if (!supabase) {
@@ -1416,72 +1209,6 @@ async function ensureSupabaseSession() {
     console.warn("Failed to refresh Supabase session", error);
     return state.authSession;
   }
-}
-
-async function fetchRemoteAccount(session) {
-  const supabase = getSupabaseAccountConfig();
-  if (!supabase || !session || !session.remoteId) {
-    return null;
-  }
-  const baseUrl = sanitizeSupabaseUrl(supabase.url);
-  const target = `${baseUrl}/rest/v1/${supabase.accountsTable}?select=user_id,email,password_hash,sync_settings,created_at,updated_at&user_id=eq.${encodeURIComponent(
-    session.remoteId
-  )}`;
-  const response = await fetch(target, {
-    headers: createSupabaseHeaders(supabase.anonKey, session.accessToken),
-  });
-  const payload = await readSupabaseResponse(response);
-  if (!response.ok) {
-    if (response.status === 404) {
-      return null;
-    }
-    throw new Error(parseSupabaseErrorMessage(response.status, payload));
-  }
-  if (!payload || !Array.isArray(payload) || payload.length === 0) {
-    return null;
-  }
-  const record = payload[0];
-  let syncPayload = {};
-  if (record.sync_settings) {
-    if (typeof record.sync_settings === "string") {
-      try {
-        syncPayload = JSON.parse(record.sync_settings);
-      } catch (error) {
-        console.warn("Failed to parse remote sync settings", error);
-        syncPayload = {};
-      }
-    } else if (typeof record.sync_settings === "object") {
-      syncPayload = record.sync_settings;
-    }
-  }
-  const normalizedEmail = normalizeEmail(record.email || session.email || session.userId);
-  const syncSettings = normalizeSyncSettings({
-    enabled: true,
-    provider: "supabase",
-    supabase: {
-      url:
-        syncPayload.supabase && syncPayload.supabase.url
-          ? syncPayload.supabase.url
-          : supabase.url,
-      anonKey:
-        syncPayload.supabase && syncPayload.supabase.anonKey
-          ? syncPayload.supabase.anonKey
-          : supabase.anonKey,
-      table:
-        syncPayload.supabase && syncPayload.supabase.table
-          ? syncPayload.supabase.table
-          : supabase.dataTable || DEFAULT_SYNC_SETTINGS.supabase.table,
-    },
-  });
-  return {
-    id: normalizedEmail,
-    email: record.email || session.email || normalizedEmail,
-    passwordHash: record.password_hash || "",
-    createdAt: record.created_at || null,
-    lastLoginAt: record.updated_at || null,
-    remoteId: record.user_id || session.remoteId,
-    sync: syncSettings,
-  };
 }
 
 async function upsertRemoteAccount(account, session) {
@@ -1605,7 +1332,7 @@ async function pushRemoteData(account, session = null) {
   updateRemoteMarker("lastRemoteCommit", payload.updated_at);
   updateRemoteMarker("lastRemoteUpdate", state.remoteSync.lastSyncedAt);
   notifyRealtimeUpdate(payload.updated_at);
-  updateSyncStatus();
+  setOutOfSync(false);
 }
 
 function runSyncPromise(promise) {
@@ -1621,7 +1348,7 @@ async function performSync(options = {}) {
   const { forcePush = false, preferRemote = false, remoteCommit = null } = options;
   const account = getCurrentAccountRecord();
   if (!isSyncEnabled(account)) {
-    updateSyncStatus();
+    setOutOfSync(false);
     return;
   }
   if (state.remoteSync.inFlight) {
@@ -1632,12 +1359,23 @@ async function performSync(options = {}) {
     try {
       state.remoteSync.pending = true;
       state.remoteSync.lastError = null;
-      updateSyncStatus();
+      updateSyncIndicator();
       const activeSession = await ensureSupabaseSession();
       if (!activeSession || !activeSession.accessToken) {
         throw new Error("Supabase session required for syncing.");
       }
-      const remote = await pullRemoteData(account, activeSession);
+      let remote;
+      try {
+        remote = await pullRemoteData(account, activeSession);
+      } catch (error) {
+        setOutOfSync(true);
+        throw error;
+      }
+      if (!remote || !remote.data) {
+        setOutOfSync(true);
+        throw new Error("Unable to load remote data.");
+      }
+      setOutOfSync(false);
       let localTimestamp = getDataTimestamp(state.data);
       let localHasContent = hasMeaningfulData(state.data);
       let remoteTimestamp = null;
@@ -1719,12 +1457,12 @@ async function performSync(options = {}) {
           : state.remoteSync.lastSyncedAt;
         updateRemoteMarker("lastRemoteCommit", remoteCommit);
         updateRemoteMarker("lastRemoteUpdate", state.remoteSync.lastSyncedAt);
-        updateSyncStatus();
+        updateSyncIndicator();
       }
     } catch (error) {
       state.remoteSync.pending = false;
       state.remoteSync.lastError = error && error.message ? error.message : String(error);
-      updateSyncStatus();
+      setOutOfSync(true);
       throw error;
     }
   })();
@@ -1771,7 +1509,7 @@ async function completeSignIn(userId, options = {}) {
   triggerSelectionGlow();
   render();
   updateAccountBar();
-  updateSyncStatus();
+  updateSyncIndicator();
   if (!skipSync && isSyncEnabled(account)) {
     try {
       await performSync({ forcePush: false });
@@ -1800,7 +1538,7 @@ function handleSignOut() {
   resetUiState(new Date());
   showAuthGate();
   updateAccountBar();
-  updateSyncStatus();
+  setOutOfSync(false);
 }
 
 function resetAccountMenuFeedback() {
@@ -1971,11 +1709,6 @@ async function handleDeleteAccountClick() {
       throw new Error(parseSupabaseErrorMessage(deleteResponse.status, payload));
     }
 
-    try {
-      localStorage.removeItem(getUserStorageKey(account.id));
-    } catch (storageError) {
-      console.warn("Failed to remove local data for deleted account", storageError);
-    }
     delete state.accountStore.users[account.id];
     saveAccountStore(state.accountStore);
     closeAccountMenu();
@@ -1994,133 +1727,47 @@ async function handleDeleteAccountClick() {
 async function handleSignIn(event) {
   event.preventDefault();
   clearAuthError();
-  const emailInput = elements.signInEmail ? elements.signInEmail.value : "";
-  const email = normalizeEmail(emailInput);
+  const rawEmail = elements.signInEmail ? elements.signInEmail.value : "";
+  const normalizedEmail = normalizeEmail(rawEmail);
   const password = elements.signInPassword ? elements.signInPassword.value : "";
-  if (!email || !password) {
+  if (!normalizedEmail || !password) {
     setAuthError("Email and password are required.");
     return;
   }
-  const passwordHash = await hashPassword(password);
-  let account = state.accountStore.users[email] || null;
-  let session = null;
-
-  if (isSupabaseConfigured()) {
-    try {
-      session = await supabaseSignIn(emailInput.trim() || email, password);
-    } catch (error) {
-      setAuthError(error.message || "Unable to sign in with Supabase.");
-      return;
-    }
-    try {
-      const remoteAccount = await fetchRemoteAccount(session);
-      if (remoteAccount) {
-        remoteAccount.passwordHash = remoteAccount.passwordHash || passwordHash;
-        remoteAccount.sync = normalizeSyncSettings(remoteAccount.sync);
-        account = { ...(account || {}), ...remoteAccount };
-      }
-    } catch (error) {
-      console.warn("Failed to load remote account", error);
-    }
-  }
-
-  if (!account) {
-    account = state.accountStore.users[email] || null;
-  }
-
-  if (!account) {
-    setAuthError("Account not found.");
+  if (!isSupabaseConfigured()) {
+    setAuthError("Unable to contact the cloud service.");
     return;
   }
-
-  if (!session && account.passwordHash !== passwordHash) {
-    setAuthError("Incorrect password.");
-    return;
-  }
-
-  account.email = account.email || (emailInput.trim() || email);
-  account.passwordHash = passwordHash;
-  account.remoteId = session && session.remoteId ? session.remoteId : account.remoteId || email;
-  account.sync = normalizeSyncSettings(account.sync);
-  state.accountStore.users[email] = account;
-  saveAccountStore(state.accountStore);
-
-  if (session) {
-    try {
-      await upsertRemoteAccount(account, session);
-    } catch (error) {
-      console.warn("Failed to update remote account", error);
-    }
-  }
-
-  await completeSignIn(email, { session, skipSync: !isSyncEnabled(account) });
-  if (elements.signInForm) {
-    elements.signInForm.reset();
-  }
-  if (elements.registerForm) {
-    elements.registerForm.reset();
-  }
-}
-
-async function handleRegister(event) {
-  event.preventDefault();
-  clearAuthError();
-  const emailRaw = elements.registerEmail ? elements.registerEmail.value : "";
-  const email = normalizeEmail(emailRaw);
-  const password = elements.registerPassword ? elements.registerPassword.value : "";
-  const confirm = elements.registerConfirm ? elements.registerConfirm.value : "";
-  if (!email) {
-    setAuthError("Email is required.");
-    return;
-  }
-  if (state.accountStore.users[email]) {
-    setAuthError("An account with this email already exists.");
-    return;
-  }
-  if (!password || password.length < MIN_PASSWORD_LENGTH) {
-    setAuthError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
-    return;
-  }
-  if (password !== confirm) {
-    setAuthError("Passwords do not match.");
+  let session;
+  try {
+    session = await supabaseSignIn(rawEmail.trim() || normalizedEmail, password);
+  } catch (error) {
+    setAuthError(error && error.message ? error.message : "Unable to sign in.");
     return;
   }
   const passwordHash = await hashPassword(password);
-  const syncSettings = deriveAccountSyncSettings();
-  let session = null;
-  if (isSupabaseConfigured()) {
-    try {
-      session = await supabaseSignUp(emailRaw.trim() || email, password);
-    } catch (error) {
-      setAuthError(error.message || "Unable to create cloud account.");
-      return;
-    }
-  }
-  const record = {
-    id: email,
-    email: emailRaw.trim() || email,
+  const existing = state.accountStore.users[normalizedEmail] || {};
+  const account = {
+    id: normalizedEmail,
+    email: rawEmail.trim() || existing.email || normalizedEmail,
+    createdAt: existing.createdAt || new Date().toISOString(),
+    lastLoginAt: new Date().toISOString(),
     passwordHash,
-    createdAt: new Date().toISOString(),
-    lastLoginAt: null,
-    sync: syncSettings,
-    remoteId: session && session.remoteId ? session.remoteId : email,
+    remoteId: session && session.remoteId ? session.remoteId : existing.remoteId || normalizedEmail,
+    sync: normalizeSyncSettings(existing.sync || deriveAccountSyncSettings()),
   };
-  state.accountStore.users[email] = record;
+  state.accountStore.users[normalizedEmail] = account;
   saveAccountStore(state.accountStore);
-  if (session) {
-    try {
-      await upsertRemoteAccount(record, session);
-    } catch (error) {
-      console.warn("Failed to persist remote account", error);
-      delete state.accountStore.users[email];
-      saveAccountStore(state.accountStore);
-      setAuthError(`Unable to create cloud account: ${error.message || String(error)}`);
-      return;
-    }
+  try {
+    await upsertRemoteAccount(account, session);
+  } catch (error) {
+    console.warn("Failed to update remote account", error);
   }
-  await completeSignIn(email, { skipSync: !isSyncEnabled(record), session });
-  if (elements.registerForm) {
-    elements.registerForm.reset();
+  try {
+    await completeSignIn(normalizedEmail, { session, skipSync: false });
+  } catch (error) {
+    setAuthError(error && error.message ? error.message : "Unable to load account data.");
+    return;
   }
   if (elements.signInForm) {
     elements.signInForm.reset();
@@ -4042,7 +3689,7 @@ function render() {
     return;
   }
   updateAccountBar();
-  updateSyncStatus();
+  updateSyncIndicator();
   ensureSelectedHabit();
   ensureSelectedDateWithinView();
   renderHeatmapMeta();
@@ -4074,24 +3721,16 @@ if (elements.signInForm) {
   elements.signInForm.addEventListener("submit", handleSignIn);
 }
 
-if (elements.registerForm) {
-  elements.registerForm.addEventListener("submit", handleRegister);
-}
-
-if (elements.showRegister) {
-  elements.showRegister.addEventListener("click", () => setAuthMode("register"));
-}
-
-if (elements.showSignIn) {
-  elements.showSignIn.addEventListener("click", () => setAuthMode("signIn"));
-}
-
 if (elements.signOut) {
   elements.signOut.addEventListener("click", handleSignOut);
 }
 
 if (elements.accountChip) {
   elements.accountChip.addEventListener("click", openAccountMenu);
+}
+
+if (elements.syncIndicator) {
+  elements.syncIndicator.addEventListener("click", handleSyncIndicatorClick);
 }
 
 if (elements.accountMenuClose) {
@@ -4316,9 +3955,9 @@ window.addEventListener("beforeunload", () => {
 
 async function init() {
   showAuthGate();
-  setAuthMode(state.authMode);
+  setAuthMode();
   updateAccountBar();
-  updateSyncStatus();
+  setOutOfSync(false);
   const storedSession = loadSession();
   let restoredSession = null;
   if (storedSession && storedSession.accessToken) {
