@@ -8,6 +8,7 @@ A single-page web app for logging multi-checkpoint habits, capturing focus to-do
 - 🔄 **Realtime sync:** Habit updates push to Supabase immediately and live changes stream over websockets, so logging on your phone updates the browser (and vice versa) within moments—no manual refresh button required.
 - 📡 **Self-broadcasting updates:** Each sync emits a lightweight realtime ping so other signed-in devices refresh even if Postgres change events are slow to arrive.
 - 🚨 **Out-of-sync indicator:** If the app can’t reach Supabase, a subtle warning appears in the header—click it anytime to retry a cloud pull.
+- 💤 **Keep me logged in:** Opt into persistent Supabase sessions with a single checkbox so trusted devices reopen straight into your tracker.
 - 🗓️ **Per-habit heatmaps:** Dense GitHub-style grids that flex per habit—weekly rows summarize a whole week while month and year layouts track individual days.
 - 🔁 **Customizable range:** Tap a habit label to pick a 7-day week, weekly goal grid, month, or year and the calendar instantly reflows with the right column count and cell size.
 - 🎯 **Weekly goals:** Give weekly cells their own target (e.g., 3 gym visits) so the tint reflects how close you came to that goal.
@@ -22,7 +23,7 @@ A single-page web app for logging multi-checkpoint habits, capturing focus to-do
 - 🧭 **Daily checkpoint list:** Smash the glowing “Log habit” button to finish the day, or tick sub-habits individually for precision—now with a sidebar calendar to jump between dates.
 - 👤 **Quick account controls:** Hover the account chip to reveal your email, then open the menu to change your password or delete the account when it’s time to start fresh.
 
-All information lives per-account in Supabase—no tracker data is stored in local storage. The app is preconfigured to use the hosted project at `https://peuiedofnbmjodoeiknk.supabase.co`, so progress follows you automatically across devices once you sign in.
+All habit information lives per-account in Supabase. If you choose “Keep me logged in,” the app stores your Supabase session locally so the next visit restores automatically; habit data itself never touches local storage. The app is preconfigured to use the hosted project at `https://peuiedofnbmjodoeiknk.supabase.co`, so progress follows you automatically across devices once you sign in.
 
 ## Getting started
 

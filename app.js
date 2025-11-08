@@ -56,6 +56,7 @@ const SELECTION_GLOW_DURATION = 10000;
 const SESSION_REFRESH_THRESHOLD = 60 * 1000;
 const SESSION_EXPIRY_BUFFER = 30 * 1000;
 const SESSION_FALLBACK_TTL = 60 * 60 * 1000;
+const SESSION_STORAGE_KEY = "habit-tracker.session";
 
 const MOVE_ICON_SVG = `
   <svg class="icon icon-move" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -144,6 +145,7 @@ const state = {
   isAuthenticated: false,
   authMode: "signIn",
   authSession: null,
+  sessionPersistence: false,
   data: createSeedData(),
   viewAnchors: createInitialAnchors(today),
   selectedDate: initialSelectedDate,
@@ -193,6 +195,7 @@ const elements = {
   signInForm: document.getElementById("signInForm"),
   signInEmail: document.getElementById("signInEmail"),
   signInPassword: document.getElementById("signInPassword"),
+  signInRemember: document.getElementById("signInRemember"),
   authError: document.getElementById("authError"),
   authSubtitle: document.getElementById("authSubtitle"),
   accountChip: document.getElementById("accountChip"),
@@ -285,6 +288,27 @@ function normalizeSyncSettings(sync) {
   return cloneDefaultSyncSettings();
 }
 
+let cachedStorage;
+
+function getPersistentStorage() {
+  if (cachedStorage !== undefined) {
+    return cachedStorage;
+  }
+  if (typeof window === "undefined" || !window.localStorage) {
+    cachedStorage = null;
+    return null;
+  }
+  try {
+    const testKey = "__habit_tracker_storage_test__";
+    window.localStorage.setItem(testKey, "1");
+    window.localStorage.removeItem(testKey);
+    cachedStorage = window.localStorage;
+  } catch (error) {
+    cachedStorage = null;
+  }
+  return cachedStorage;
+}
+
 function loadAccountStore() {
   return { users: {} };
 }
@@ -296,10 +320,71 @@ function normalizeEmail(value) {
 }
 
 function loadSession() {
-  return null;
+  const storage = getPersistentStorage();
+  if (!storage) {
+    return null;
+  }
+  try {
+    const raw = storage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    const userId = typeof parsed.userId === "string" ? normalizeEmail(parsed.userId) : "";
+    const accessToken = typeof parsed.accessToken === "string" ? parsed.accessToken : null;
+    if (!userId || !accessToken) {
+      return null;
+    }
+    return {
+      userId,
+      email: typeof parsed.email === "string" && parsed.email ? parsed.email : userId,
+      remoteId: typeof parsed.remoteId === "string" && parsed.remoteId ? parsed.remoteId : userId,
+      accessToken,
+      refreshToken:
+        typeof parsed.refreshToken === "string" && parsed.refreshToken ? parsed.refreshToken : null,
+      expiresAt:
+        typeof parsed.expiresAt === "number" && Number.isFinite(parsed.expiresAt)
+          ? parsed.expiresAt
+          : null,
+      persist: parsed.persist === true,
+    };
+  } catch (error) {
+    console.warn("Failed to load stored session", error);
+    return null;
+  }
 }
 
-function saveSession() {}
+function saveSession(userId, session) {
+  const storage = getPersistentStorage();
+  if (!storage) {
+    return;
+  }
+  if (!session || !state.sessionPersistence || !session.accessToken) {
+    try {
+      storage.removeItem(SESSION_STORAGE_KEY);
+    } catch (error) {
+      console.warn("Failed to clear stored session", error);
+    }
+    return;
+  }
+  const payload = {
+    userId,
+    email: session.email || userId,
+    remoteId: session.remoteId || userId,
+    accessToken: session.accessToken,
+    refreshToken: session.refreshToken || null,
+    expiresAt: session.expiresAt || null,
+    persist: true,
+  };
+  try {
+    storage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    console.warn("Failed to persist session", error);
+  }
+}
 
 function clearSession() {
   state.authSession = null;
@@ -1472,10 +1557,21 @@ async function performSync(options = {}) {
 async function completeSignIn(userId, options = {}) {
   const { skipSync = false, session = null } = options;
   const normalizedId = normalizeEmail(userId);
-  const account = state.accountStore.users[normalizedId];
+  let account = state.accountStore.users[normalizedId];
   if (!account) {
-    throw new Error("Account not found");
+    const nowIso = new Date().toISOString();
+    account = {
+      id: normalizedId,
+      email: (session && session.email) || normalizedId,
+      createdAt: nowIso,
+      lastLoginAt: nowIso,
+      passwordHash: "",
+      remoteId: (session && session.remoteId) || normalizedId,
+      sync: deriveAccountSyncSettings(),
+    };
+    state.accountStore.users[normalizedId] = account;
   }
+  account.sync = normalizeSyncSettings(account.sync);
   state.currentUserId = normalizedId;
   state.isAuthenticated = true;
   state.selectionGlowActive = true;
@@ -1526,6 +1622,20 @@ async function completeSignIn(userId, options = {}) {
 function handleSignOut() {
   if (!state.isAuthenticated) {
     return;
+  }
+  const previousUserId = state.currentUserId;
+  state.sessionPersistence = false;
+  if (previousUserId) {
+    saveSession(previousUserId, null);
+  } else {
+    const storage = getPersistentStorage();
+    if (storage) {
+      try {
+        storage.removeItem(SESSION_STORAGE_KEY);
+      } catch (error) {
+        console.warn("Failed to clear stored session", error);
+      }
+    }
   }
   closeAccountMenu();
   clearSession();
@@ -1730,6 +1840,7 @@ async function handleSignIn(event) {
   const rawEmail = elements.signInEmail ? elements.signInEmail.value : "";
   const normalizedEmail = normalizeEmail(rawEmail);
   const password = elements.signInPassword ? elements.signInPassword.value : "";
+  const keepSignedIn = elements.signInRemember ? elements.signInRemember.checked : false;
   if (!normalizedEmail || !password) {
     setAuthError("Email and password are required.");
     return;
@@ -1758,6 +1869,7 @@ async function handleSignIn(event) {
   };
   state.accountStore.users[normalizedEmail] = account;
   saveAccountStore(state.accountStore);
+  state.sessionPersistence = keepSignedIn;
   try {
     await upsertRemoteAccount(account, session);
   } catch (error) {
@@ -3960,23 +4072,21 @@ async function init() {
   setOutOfSync(false);
   const storedSession = loadSession();
   let restoredSession = null;
+  if (storedSession) {
+    state.sessionPersistence = storedSession.persist === true;
+  }
   if (storedSession && storedSession.accessToken) {
     restoredSession = {
       userId: storedSession.userId,
       email: storedSession.email || storedSession.userId,
-      remoteId:
-        storedSession.remoteId ||
-        (state.accountStore.users[storedSession.userId]
-          ? state.accountStore.users[storedSession.userId].remoteId
-          : null) ||
-        storedSession.userId,
+      remoteId: storedSession.remoteId || storedSession.userId,
       accessToken: storedSession.accessToken,
       refreshToken: storedSession.refreshToken,
       expiresAt: storedSession.expiresAt,
     };
     state.authSession = restoredSession;
   }
-  if (storedSession && storedSession.userId && state.accountStore.users[storedSession.userId]) {
+  if (storedSession && storedSession.userId && restoredSession) {
     try {
       await completeSignIn(storedSession.userId, {
         session: restoredSession,
