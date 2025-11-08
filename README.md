@@ -4,7 +4,7 @@ A single-page web app for logging multi-checkpoint habits, capturing focus to-do
 
 ## Highlights
 
-- 🔐 **Supabase-backed accounts:** Authentication, password changes, and data sync run through the hosted Supabase project so any device signed in with your account loads the same tracker instantly.
+- 🔐 **Supabase-backed accounts:** Authentication, registration, password changes, and data sync run through the hosted Supabase project so any device signed in with your account loads the same tracker instantly.
 - 🔄 **Realtime sync:** Habit updates push to Supabase immediately and live changes stream over websockets, so logging on your phone updates the browser (and vice versa) within moments—no manual refresh button required.
 - 📡 **Self-broadcasting updates:** Each sync emits a lightweight realtime ping so other signed-in devices refresh even if Postgres change events are slow to arrive.
 - 🚨 **Out-of-sync indicator:** If the app can’t reach Supabase, a subtle warning appears in the header—click it anytime to retry a cloud pull.
@@ -29,7 +29,7 @@ All habit information lives per-account in Supabase. If you choose “Keep me lo
 
 1. Clone or download this repository.
 2. Open `index.html` in a modern browser. (For the best experience, serve it via a simple static server.)
-3. Sign in with an existing Supabase account to load your tracker (accounts must already exist in the hosted project).
+3. Create an account or sign in with your Supabase credentials to load your tracker.
 4. Build habits from the library panel and start logging checkpoints from the daily list.
 
 ## Supabase schema
@@ -82,8 +82,6 @@ The bundled Supabase project expects the following tables and Row Level Security
 5. (Optional) Disable email confirmations in Supabase Auth if you want new accounts to be usable immediately, or confirm the email address before signing in.
 
 > ℹ️ The tracker still listens for Supabase Postgres change feeds. Toggle **Realtime** for both tables (or run `alter publication supabase_realtime add table public.tracker_accounts;` and `alter publication supabase_realtime add table public.tracker_profiles;`) if you want database-originated events alongside the built-in client broadcasts.
-
-Because the app no longer exposes a registration flow, create accounts directly through the Supabase dashboard, Auth API, or another administrative surface before signing in.
 
 The tracker relies entirely on Supabase; if a pull fails you’ll see the out-of-sync indicator and can retry a cloud refresh.
 

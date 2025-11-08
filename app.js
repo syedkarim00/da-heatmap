@@ -196,8 +196,16 @@ const elements = {
   signInEmail: document.getElementById("signInEmail"),
   signInPassword: document.getElementById("signInPassword"),
   signInRemember: document.getElementById("signInRemember"),
+  signUpForm: document.getElementById("signUpForm"),
+  signUpEmail: document.getElementById("signUpEmail"),
+  signUpPassword: document.getElementById("signUpPassword"),
+  signUpConfirm: document.getElementById("signUpConfirm"),
+  signUpRemember: document.getElementById("signUpRemember"),
   authError: document.getElementById("authError"),
+  authSuccess: document.getElementById("authSuccess"),
   authSubtitle: document.getElementById("authSubtitle"),
+  authSwitchToSignUp: document.getElementById("switchToSignUp"),
+  authSwitchToSignIn: document.getElementById("switchToSignIn"),
   accountChip: document.getElementById("accountChip"),
   accountChipInitial: document.getElementById("accountChipInitial"),
   accountChipEmail: document.getElementById("accountChipEmail"),
@@ -956,20 +964,51 @@ function isSyncEnabled(account) {
   return Boolean(supabase.url && supabase.anonKey && supabase.table);
 }
 
-function setAuthMode() {
-  state.authMode = "signIn";
+function setAuthMode(mode = "signIn") {
+  const nextMode = mode === "signUp" ? "signUp" : "signIn";
+  state.authMode = nextMode;
   if (elements.signInForm) {
-    elements.signInForm.classList.remove("is-hidden");
+    elements.signInForm.classList.toggle("is-hidden", nextMode !== "signIn");
+  }
+  if (elements.signUpForm) {
+    elements.signUpForm.classList.toggle("is-hidden", nextMode !== "signUp");
+  }
+  if (elements.authSwitchToSignUp) {
+    if (nextMode === "signIn") {
+      elements.authSwitchToSignUp.removeAttribute("hidden");
+    } else {
+      elements.authSwitchToSignUp.setAttribute("hidden", "hidden");
+    }
+  }
+  if (elements.authSwitchToSignIn) {
+    if (nextMode === "signUp") {
+      elements.authSwitchToSignIn.removeAttribute("hidden");
+    } else {
+      elements.authSwitchToSignIn.setAttribute("hidden", "hidden");
+    }
   }
   updateAuthSubtitle();
-  clearAuthError();
+  const focusTarget =
+    nextMode === "signUp" ? elements.signUpEmail : elements.signInEmail;
+  if (focusTarget) {
+    requestAnimationFrame(() => {
+      focusTarget.focus();
+      if (typeof focusTarget.select === "function") {
+        focusTarget.select();
+      }
+    });
+  }
 }
 
 function updateAuthSubtitle() {
   if (!elements.authSubtitle) {
     return;
   }
-  elements.authSubtitle.textContent = "Sign in to access your habits on any device.";
+  const message =
+    state.authMode === "signUp"
+      ? "Create a habit tracker account to sync across devices."
+      : "Sign in to access your habits on any device.";
+  elements.authSubtitle.textContent = message;
 }
 
 function setAuthError(message) {
@@ -984,6 +1023,23 @@ function clearAuthError() {
   }
 }
 
+function setAuthSuccess(message) {
+  if (elements.authSuccess) {
+    elements.authSuccess.textContent = message || "";
+  }
+}
+
+function clearAuthSuccess() {
+  if (elements.authSuccess) {
+    elements.authSuccess.textContent = "";
+  }
+}
+
+function clearAuthMessages() {
+  clearAuthError();
+  clearAuthSuccess();
+}
+
 function showAuthGate() {
   if (elements.authGate) {
     elements.authGate.classList.remove("is-hidden");
@@ -991,7 +1047,8 @@ function showAuthGate() {
   if (elements.appShell) {
     elements.appShell.classList.add("is-hidden");
   }
-  setAuthMode();
+  clearAuthMessages();
+  setAuthMode(state.authMode);
 }
 
 function hideAuthGate() {
@@ -1237,6 +1294,28 @@ async function supabaseSignIn(email, password) {
     throw new Error("Supabase did not return an access token. Confirm your email and try again.");
   }
   return session;
+}
+
+async function supabaseSignUp(email, password) {
+  const supabase = getSupabaseAccountConfig();
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+  const baseUrl = sanitizeSupabaseUrl(supabase.url);
+  const target = `${baseUrl}/auth/v1/signup`;
+  const response = await fetch(target, {
+    method: "POST",
+    headers: {
+      apikey: supabase.anonKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, password }),
+  });
+  const payload = await readSupabaseResponse(response);
+  if (!response.ok) {
+    throw new Error(parseSupabaseErrorMessage(response.status, payload));
+  }
+  return normalizeSupabaseSessionPayload(payload, email);
 }
 
 async function refreshSupabaseSession(refreshToken, previous) {
@@ -1646,6 +1725,7 @@ function handleSignOut() {
   state.currentUserId = null;
   state.data = createSeedData();
   resetUiState(new Date());
+  state.authMode = "signIn";
   showAuthGate();
   updateAccountBar();
   setOutOfSync(false);
@@ -1834,9 +1914,81 @@ async function handleDeleteAccountClick() {
   }
 }
 
+async function handleSignUp(event) {
+  event.preventDefault();
+  clearAuthMessages();
+  const rawEmail = elements.signUpEmail ? elements.signUpEmail.value : "";
+  const normalizedEmail = normalizeEmail(rawEmail);
+  const password = elements.signUpPassword ? elements.signUpPassword.value : "";
+  const confirmPassword = elements.signUpConfirm ? elements.signUpConfirm.value : "";
+  const keepSignedIn = elements.signUpRemember ? elements.signUpRemember.checked : false;
+  if (!normalizedEmail || !password || !confirmPassword) {
+    setAuthError("Email and password are required.");
+    return;
+  }
+  if (password !== confirmPassword) {
+    setAuthError("Passwords must match.");
+    return;
+  }
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    setAuthError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+    return;
+  }
+  if (!isSupabaseConfigured()) {
+    setAuthError("Unable to contact the cloud service.");
+    return;
+  }
+  let session = null;
+  try {
+    session = await supabaseSignUp(rawEmail.trim() || normalizedEmail, password);
+  } catch (error) {
+    setAuthError(error && error.message ? error.message : "Unable to create account.");
+    return;
+  }
+  if (!session || !session.accessToken) {
+    setAuthSuccess("Check your email to confirm your account, then sign in.");
+    if (elements.signInEmail) {
+      elements.signInEmail.value = rawEmail.trim() || normalizedEmail;
+    }
+    if (elements.signUpForm) {
+      elements.signUpForm.reset();
+    }
+    setAuthMode("signIn");
+    return;
+  }
+  const passwordHash = await hashPassword(password);
+  const nowIso = new Date().toISOString();
+  const account = {
+    id: normalizedEmail,
+    email: rawEmail.trim() || normalizedEmail,
+    createdAt: nowIso,
+    lastLoginAt: nowIso,
+    passwordHash,
+    remoteId: session && session.remoteId ? session.remoteId : normalizedEmail,
+    sync: normalizeSyncSettings(deriveAccountSyncSettings()),
+  };
+  state.accountStore.users[normalizedEmail] = account;
+  saveAccountStore(state.accountStore);
+  state.sessionPersistence = keepSignedIn;
+  try {
+    await upsertRemoteAccount(account, session);
+  } catch (error) {
+    console.warn("Failed to register remote account", error);
+  }
+  try {
+    await completeSignIn(normalizedEmail, { session, skipSync: false });
+  } catch (error) {
+    setAuthError(error && error.message ? error.message : "Unable to finish setup.");
+    return;
+  }
+  if (elements.signUpForm) {
+    elements.signUpForm.reset();
+  }
+}
+
 async function handleSignIn(event) {
   event.preventDefault();
-  clearAuthError();
+  clearAuthMessages();
   const rawEmail = elements.signInEmail ? elements.signInEmail.value : "";
   const normalizedEmail = normalizeEmail(rawEmail);
   const password = elements.signInPassword ? elements.signInPassword.value : "";
@@ -3833,6 +3985,24 @@ if (elements.signInForm) {
   elements.signInForm.addEventListener("submit", handleSignIn);
 }
 
+if (elements.signUpForm) {
+  elements.signUpForm.addEventListener("submit", handleSignUp);
+}
+
+if (elements.authSwitchToSignUp) {
+  elements.authSwitchToSignUp.addEventListener("click", () => {
+    clearAuthMessages();
+    setAuthMode("signUp");
+  });
+}
+
+if (elements.authSwitchToSignIn) {
+  elements.authSwitchToSignIn.addEventListener("click", () => {
+    clearAuthMessages();
+    setAuthMode("signIn");
+  });
+}
+
 if (elements.signOut) {
   elements.signOut.addEventListener("click", handleSignOut);
 }
@@ -4067,7 +4237,6 @@ window.addEventListener("beforeunload", () => {
 
 async function init() {
   showAuthGate();
-  setAuthMode();
   updateAccountBar();
   setOutOfSync(false);
   const storedSession = loadSession();

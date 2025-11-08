@@ -47,7 +47,43 @@
           </label>
           <button type="submit" class="primary">Sign in</button>
         </form>
+        <form id="signUpForm" class="auth-form is-hidden" autocomplete="off">
+          <div class="field">
+            <label for="signUpEmail">Email</label>
+            <input id="signUpEmail" type="email" required autocomplete="email" />
+          </div>
+          <div class="field">
+            <label for="signUpPassword">Password</label>
+            <input
+              id="signUpPassword"
+              type="password"
+              required
+              minlength="8"
+              autocomplete="new-password"
+            />
+          </div>
+          <div class="field">
+            <label for="signUpConfirm">Confirm password</label>
+            <input
+              id="signUpConfirm"
+              type="password"
+              required
+              minlength="8"
+              autocomplete="new-password"
+            />
+          </div>
+          <label class="checkbox">
+            <input id="signUpRemember" type="checkbox" />
+            <span>Keep me logged in</span>
+          </label>
+          <button type="submit" class="primary">Create account</button>
+        </form>
         <p id="authError" class="auth-error" role="status"></p>
+        <p id="authSuccess" class="auth-success" role="status"></p>
+        <div class="auth-switch">
+          <button id="switchToSignUp" type="button" class="link-button">Need an account? Create one</button>
+          <button id="switchToSignIn" type="button" class="link-button" hidden>Already have an account? Sign in</button>
+        </div>
       </div>
     </div>
 

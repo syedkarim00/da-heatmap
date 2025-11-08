@@ -193,6 +193,18 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+.auth-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.auth-switch .link-button {
+  font-size: 0.95rem;
+}
+
 .link-button {
   align-self: flex-start;
   background: none;
