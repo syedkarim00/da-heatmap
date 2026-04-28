@@ -1,8 +1,8 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
-const SUPABASE_URL = "https://peuiedofnbmjodoeiknk.supabase.co";
+const SUPABASE_URL = "https://nykdubcfiulzptonbxkm.supabase.co";
 const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBldWllZG9mbmJtam9kb2Vpa25rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIzOTE3OTUsImV4cCI6MjA3Nzk2Nzc5NX0.-lcNxCD7ceVnSfIp49_TF2iMKLpsyfbQssv774Eh72w";
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55a2R1YmNmaXVsenB0b25ieGttIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNDMxMzQsImV4cCI6MjA5MjkxOTEzNH0.DBh7cNIG_fDovJD3R8MYm9ynqjsGAT96cHpM3UOl8DE";
 const SUPABASE_ACCOUNTS_TABLE = "tracker_accounts";
 const SUPABASE_DATA_TABLE = "tracker_profiles";
 const DEFAULT_SYNC_SETTINGS = {
